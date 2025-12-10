@@ -21,4 +21,6 @@ branches:
     prefix: test/
   - label: docs
     skip: true
+  - label: question
+    skip: true
 commentMessage: 'Branch ${branchName} created for issue: ${issue.title}'
