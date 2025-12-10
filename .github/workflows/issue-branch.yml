@@ -1,27 +1,23 @@
-branchName: "${labelPrefix}chistock-#${issue.number}"
+# branchName: "${labelPrefix}chistock-#${issue.number}"
 autoCloseIssue: true
 openDraftPR: true
 copyIssueLabelsToPR: true
 copyIssueAssigneeToPR: true
 branches:
   - label: bug
-    name: "bugfix/chistock-#${issue.number}"
-  - label: issue
-    name: "issuefix/chistock-#${issue.number}"
+    prefix: bugfix/
   - label: release
     skip: true
   - label: env
     skip: true
   - label: feature
-    name: "feature/chistock-#${issue.number}"
+    prefix: feature/
   - label: duplicate
     skip: true
-  - label: sub_issue
-    skip: true
   - label: refactor
-    name: "refactor/chistock-#${issue.number}"
+    prefix: refactor/
   - label: test
-    name: "test/chistock-#${issue.number}"
+    prefix: test/
   - label: docs
     skip: true
 commentMessage: 'Branch ${branchName} created for issue: ${issue.title}'
