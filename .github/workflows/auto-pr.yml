@@ -1,0 +1,39 @@
+name: Auto Create PR If Missing
+
+on:
+  push:
+    branches:
+      - bugfix/*
+      - issuefix/*
+      - feature/*
+      - refactor/*
+      - test/*
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check if PR already exists
+        id: pr_check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              head: `${context.repo.owner}:${context.ref.replace('refs/heads/', '')}`,
+            });
+            return prs.data.length > 0;
+
+      - name: Create Draft PR
+        if: steps.pr_check.outputs.result == 'false'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          title: "Auto Draft PR - ${{ github.ref_name }}"
+          body: "This PR was automatically created because none existed."
+          draft: true
+          branch: ${{ github.ref_name }}
