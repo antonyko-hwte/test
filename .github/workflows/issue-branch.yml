@@ -24,3 +24,4 @@ branchName: "chistock-#${issue.number}"
       prefix: test/
     - label: docs
       prefix: document/
+  commentMessage: 'Branch ${branchName} created for issue: ${issue.title}'
