@@ -6,6 +6,8 @@ branchName: "chistock-#${issue.number}"
   branches:
     - label: bug
       prefix: bugfix/
+    - label: issue
+      prefix: issuefix/
     - label: release
       skip: true
     - label: env
@@ -13,6 +15,8 @@ branchName: "chistock-#${issue.number}"
     - label: feature
       prefix: feature/
     - label: duplicate
+      skip: true
+    - label: sub_issue
       skip: true
     - label: refactor
       prefix: refactor/
