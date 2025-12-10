@@ -11,7 +11,8 @@ branches:
   - label: env
     skip: true
   - label: feature
-    prefix: feature/
+    name: "feature/chistock-#${issue.number}"
+    skipNamePatterns: []
   - label: duplicate
     skip: true
   - label: refactor
