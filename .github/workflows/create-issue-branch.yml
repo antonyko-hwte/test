@@ -276,7 +276,7 @@ jobs:
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: issueNumber,
-                  body: `✅ **이슈 해결됨**\n연결된 PR #${prNumber}이(가) merge되었습니다. 이슈를 Done 상태로 변경합니다.\n\nPR: https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`
+                  body: `✅ **이슈 해결됨**\n연결된 PR #${prNumber}이(가) merge되었습니다. 이슈를 Done 상태로 변경합니다.\n`
                 });
                 
                 console.log(`✅ Successfully updated issue #${issueNumber} to Done`);
@@ -297,7 +297,7 @@ jobs:
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: issueNumber,
-                  body: `⏸️ **PR이 닫혔습니다**\n연결된 PR #${prNumber}이(가) merge되지 않고 닫혔습니다. 이슈를 Todo 상태로 되돌립니다.\n\nPR: https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`
+                  body: `⏸️ **PR이 닫혔습니다**\n연결된 PR #${prNumber}이(가) merge되지 않고 닫혔습니다. 이슈를 Todo 상태로 되돌립니다.\n`
                 });
                 
                 console.log(`✅ Successfully updated issue #${issueNumber} to Todo`);
@@ -386,7 +386,7 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issueNumber,
-                body: `🔄 **이슈 재개됨**\n연결된 PR #${prNumber}이(가) 재열렸습니다. 이슈를 In progress 상태로 변경합니다.\n\nPR: https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`
+                body: `🔄 **이슈 재개됨**\n연결된 PR #${prNumber}이(가) 재열렸습니다. 이슈를 In progress 상태로 변경합니다.\n`
               });
               
               console.log(`✅ Successfully updated issue #${issueNumber} to In progress`);
