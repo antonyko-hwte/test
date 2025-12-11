@@ -1,19 +1,29 @@
+name: Create Issue Branch and PR
+
 on:
-  # The issues event below is only needed for the default (auto) mode,
-  # you can remove it otherwise
   issues:
-    types: [ opened, assigned ]
-  # The issue_comment event below is only needed for the ChatOps mode,
-  # you can remove it otherwise
+    types: [opened, assigned, labeled]
   issue_comment:
-    types: [ created ]
+    types: [created]
   pull_request:
-    types: [ closed ]
+    types: [closed]
+
+# 권한 설정
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: write
 
 jobs:
   create_issue_branch_job:
     runs-on: ubuntu-latest
     if: |
+      github.event_name == 'issues' && (
+        github.event.action == 'opened' ||
+        github.event.action == 'assigned' ||
+        github.event.action == 'labeled'
+      ) &&
       !contains(github.event.issue.labels.*.name, 'docs') &&
       !contains(github.event.issue.labels.*.name, 'release') &&
       !contains(github.event.issue.labels.*.name, 'sub_issue') &&
@@ -24,28 +34,160 @@ jobs:
       !contains(github.event.issue.labels.*.name, 'env')
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Create Issue Branch
         uses: robvanderleek/create-issue-branch@main
-        with:
+        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CONFIG_BRANCH_NAME: "${branch.prefix}chistock-#${{ github.event.issue.number }}"
-          CONFIG_BRANCHES: |
-            bug=bugfix/
-            issue=issuefix/
-            feature=feature/
-            refactor=refactor/
-            test=test/
-            docs=skip
-            release=skip
-            duplicate=skip
-            invalid=skip
-            wontfix=skip
-            env=skip
+        with:
+          # 브랜치 이름 템플릿
+          branchName: "${branch.prefix}chistock-#${{ github.event.issue.number }}"
           
-          CONFIG_AUTO_CLOSE_ISSUE: "true"
-          CONFIG_OPEN_DRAFT_PR: "true"
-          CONFIG_COPY_ISSUE_LABELS_TO_PR: "true"
-          CONFIG_COPY_ISSUE_ASSIGNEE_TO_PR: "true"
-          CONFIG_COPY_ISSUE_BODY_TO_PR: "true"
-          CONFIG_DRAFT_PR_TITLE: "chistock-#${{ github.event.issue.number }}: ${{ github.event.issue.title }}"
-          CONFIG_SILENT: "false"  # 브랜치 생성 시 이슈에 댓글 남김 (디버깅용)
+          # 레이블-브랜치 매핑 설정
+          branches: |
+            [
+              {
+                "label": "bug",
+                "prefix": "bugfix/"
+              },
+              {
+                "label": "feature",
+                "prefix": "feature/"
+              },
+              {
+                "label": "hotfix",
+                "prefix": "hotfix/"
+              },
+              {
+                "label": "refactor",
+                "prefix": "refactor/"
+              },
+              {
+                "label": "test",
+                "prefix": "test/"
+              },
+              {
+                "label": "issue",
+                "prefix": "issuefix/"
+              },
+              {
+                "label": "docs",
+                "skip": true
+              },
+              {
+                "label": "release",
+                "skip": true
+              },
+              {
+                "label": "duplicate",
+                "skip": true
+              },
+              {
+                "label": "invalid",
+                "skip": true
+              },
+              {
+                "label": "wontfix",
+                "skip": true
+              },
+              {
+                "label": "env",
+                "skip": true
+              },
+              {
+                "label": "question",
+                "skip": true
+              }
+            ]
+          
+          # 기능 설정
+          autoCloseIssue: false
+          openDraftPR: true
+          copyIssueLabelsToPR: true
+          copyIssueAssigneeToPR: true
+          copyIssueBodyToPR: true
+          copyIssueProjectsToPR: true
+          copyIssueMilestoneToPR: true
+          
+          # PR 설정 개선
+          draftPRTitle: "[chistock-#${{ github.event.issue.number }}] ${{ github.event.issue.title }}"
+          draftPRBody: |
+            ## 관련 이슈
+            Resolves #${{ github.event.issue.number }}
+            
+            ## 변경 사항
+            이슈 #${{ github.event.issue.number }}를 해결하기 위한 PR입니다.
+          
+          # 기본 브랜치 설정
+          defaultBranch: "main"
+          
+          # 기타 설정
+          silent: false
+          skipBranchForExistingPR: true  # PR이 있으면 브랜치 생성 건너뛰기
+          commentOnIssue: true  # 코멘트 추가
+          
+          # 브랜치 이름 포맷 설정 추가
+          branchNameFormat: "lowercase"  # 브랜치 이름을 소문자로
+          replaceInvalidCharacters: true  # 유효하지 않은 문자 교체
+          
+      # 추가 단계: 생성 완료 후 알림
+      - name: Notify on success
+        if: success()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const branch = process.env.CREATED_BRANCH_NAME;
+            
+            if (branch) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `브랜치 및 PR이 생성되었습니다!\n\n**브랜치**: \`${branch}\`\n**이슈**: #${issue.number}\n\n작업을 시작해주세요!`
+              });
+            }
+
+  # PR 머지 때 이슈 자동 닫기
+  close_issue_on_pr_merge:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true
+    
+    permissions:
+      issues: write
+    
+    steps:
+      - name: Close related issue
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+            
+            // PR 본문에서 이슈 번호 추출 (Resolves #123, Closes #123, Fixes #123 등)
+            const issueMatch = body.match(/(?:Resolves|Closes|Fixes|Fix)\s+#(\d+)/i);
+            
+            if (issueMatch) {
+              const issueNumber = parseInt(issueMatch[1]);
+              
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                state: 'closed'
+              });
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: `PR #${pr.number}이(가) 머지되어 이슈를 닫습니다.`
+              });
+            }
