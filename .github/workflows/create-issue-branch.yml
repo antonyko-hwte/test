@@ -213,7 +213,7 @@ jobs:
             echo "Found issue number: $ISSUE_NUMBER"
             echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
           else
-            # 또는 브랜치 이름에서 이슈 번호 추출
+            # 브랜치 이름에서 이슈 번호 추출
             BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
             echo "Branch name: $BRANCH_NAME"
             if [[ "$BRANCH_NAME" =~ chistock-#([0-9]+) ]]; then
@@ -245,7 +245,7 @@ jobs:
                 body: `✅ **이슈 해결됨**\n연결된 PR #${prNumber}이(가) merge되었습니다. 이슈를 DONE 상태로 변경합니다.`
               });
               
-              // GitHub Projects를 사용한다면, 이슈에 "DONE" 라벨 추가
+              // GitHub Projects를 사용한다면, 이슈에 "DONE" 추가
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -298,24 +298,7 @@ jobs:
       - name: Extract issue number from PR
         id: extract_issue_reopen
         run: |
-          # 방법 1: PR 본문에서 추출
-          PR_BODY="${{ github.event.pull_request.body }}"
-          echo "PR Body preview: ${PR_BODY:0:200}..."
-          
-          ISSUE_NUMBER=""
-          
-          # PR 본문에서 "Resolves #이슈번호" 패턴 찾기
-          if [[ -n "$PR_BODY" && "$PR_BODY" =~ [Rr]esolves\ *#([0-9]+) ]]; then
-            ISSUE_NUMBER="${BASH_REMATCH[1]}"
-            echo "Found issue number from PR body (Resolves): $ISSUE_NUMBER"
-          # PR 본문에서 "#이슈번호" 패턴 찾기
-          elif [[ -n "$PR_BODY" && "$PR_BODY" =~ \#([0-9]+) ]]; then
-            # 여러 개가 있을 수 있으므로 첫 번째 매칭 사용
-            ISSUE_NUMBER="${BASH_REMATCH[1]}"
-            echo "Found issue number from PR body (#): $ISSUE_NUMBER"
-          fi
-          
-          # 방법 2: 브랜치 이름에서 추출
+          # 브랜치 이름에서 추출
           if [[ -z "$ISSUE_NUMBER" ]]; then
             BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
             echo "Branch name: $BRANCH_NAME"
@@ -327,8 +310,8 @@ jobs:
               echo "Found issue number from branch name pattern: $ISSUE_NUMBER"
             fi
           fi
-          
-          # 방법 3: PR 제목에서 추출
+
+          #  PR 제목에서 추출
           if [[ -z "$ISSUE_NUMBER" ]]; then
             PR_TITLE="${{ github.event.pull_request.title }}"
             echo "PR title: $PR_TITLE"
@@ -356,7 +339,7 @@ jobs:
           ISSUE_NUMBER="${{ steps.extract_issue_reopen.outputs.issue_number }}"
           echo "Checking if issue #${ISSUE_NUMBER} exists..."
           
-          # GitHub API를 사용하여 이슈 존재 여부 확인
+          # 이슈 존재 여부 확인
           response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/issues/${ISSUE_NUMBER}")
           
@@ -376,7 +359,7 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            // 필요한 라벨들을 확인하고 없으면 생성
+            // 라벨들 확인
             const labelsToCreate = [
               { name: 'IN PROGRESS', color: '0366d6', description: '작업 진행 중인 이슈' },
               { name: 'DONE', color: '0e8a16', description: '완료된 이슈' }
@@ -459,7 +442,7 @@ jobs:
                 }
               }
               
-              // 4. IN PROGRESS 라벨 추가
+              // 4. IN PROGRESS 추가
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -479,14 +462,6 @@ jobs:
               
               console.log(`✅ Successfully updated issue #${issueNumber} to IN PROGRESS`);
               
-              // 6. PR에도 성공 코멘트 추가 (선택사항)
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                body: `✅ 연결된 이슈 #${issueNumber}을(를) IN PROGRESS 상태로 변경했습니다.`
-              });
-              
             } catch (error) {
               console.error(`❌ Error updating issue #${issueNumber}:`, error);
               
@@ -498,18 +473,6 @@ jobs:
                 body: `⚠️ **자동 이슈 상태 업데이트 실패**\n연결된 이슈 #${issueNumber}를 IN PROGRESS 상태로 변경하는데 실패했습니다. 수동으로 처리해주세요.\n\n에러: ${error.message}`
               });
             }
-      
-      - name: Log if no issue found
-        if: steps.extract_issue_reopen.outputs.issue_number == '' || steps.check_issue.outputs.issue_exists != 'true'
-        run: |
-          echo "Skipping issue status update because:"
-          echo "- Issue number extracted: ${{ steps.extract_issue_reopen.outputs.issue_number }}"
-          echo "- Issue exists: ${{ steps.check_issue.outputs.issue_exists }}"
-          
-          if [[ "${{ steps.extract_issue_reopen.outputs.issue_number }}" == "" ]]; then
-            echo "⚠️ No issue number could be extracted from PR."
-            echo "PR should include 'Resolves #123' in the body or have 'chistock-#123' in branch name/title."
-          fi
             
       # - name: Comment on issue
       #   uses: actions/github-script@v6
