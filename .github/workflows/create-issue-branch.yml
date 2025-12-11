@@ -40,33 +40,70 @@ jobs:
         id: get_prefix
         run: |
           ISSUE_NUMBER=${{ github.event.issue.number }}
-          LABELS='${{ toJSON(github.event.issue.labels.name) }}'
           
-          echo "DEBUG: Raw labels = $LABELS"
-          
-          # 레이블 이름
+          # GitHub Actions 컨텍스트에서 레이블 이름 배열 가져오기
+          # labels 배열에서 이름만 추출
+          LABEL_NAMES=""
           PREFIX=""
           
-          # 레이블별 prefix 매핑
-          if echo "$LABELS" | grep -i '"bug"'; then
-            PREFIX="bugfix/"
-            echo "DEBUG: Found 'bug' label"
-          elif echo "$LABELS" | grep -i '"feature"'; then
-            PREFIX="feature/"
-            echo "DEBUG: Found 'feature' label"
-          elif echo "$LABELS" | grep -i '"hotfix"'; then
-            PREFIX="hotfix/"
-            echo "DEBUG: Found 'hotfix' label"
-          elif echo "$LABELS" | grep -i '"refactor"'; then
-            PREFIX="refactor/"
-            echo "DEBUG: Found 'refactor' label"
-          else
-            PREFIX=""
-            echo "DEBUG: No specific label found, using no prefix"
-          fi
+          # 디버그: 모든 레이블 정보 출력
+          echo "DEBUG: All labels JSON:"
+          echo '${{ toJSON(github.event.issue.labels) }}'
+          
+          # jq를 사용하여 레이블 이름만 추출 (jq가 설치되어 있다고 가정)
+          # GitHub Actions Ubuntu runner에는 jq가 기본 설치되어 있습니다
+          LABEL_NAMES=$(echo '${{ toJSON(github.event.issue.labels) }}' | jq -r '.[].name' 2>/dev/null || echo "")
+          
+          echo "DEBUG: Extracted label names: $LABEL_NAMES"
+          
+          # 각 레이블을 개별적으로 확인
+          while IFS= read -r label; do
+            if [ -n "$label" ]; then
+              echo "DEBUG: Checking label: '$label'"
+              
+              # 소문자로 변환하여 비교 (대소문자 구분 없이)
+              label_lower=$(echo "$label" | tr '[:upper:]' '[:lower:]')
+              
+              case "$label_lower" in
+                *bug*)
+                  if [ -z "$PREFIX" ]; then
+                    PREFIX="bugfix/"
+                    echo "DEBUG: Found 'bug' label, setting prefix to 'bugfix/'"
+                  fi
+                  ;;
+                *feature*)
+                  if [ -z "$PREFIX" ]; then
+                    PREFIX="feature/"
+                    echo "DEBUG: Found 'feature' label, setting prefix to 'feature/'"
+                  fi
+                  ;;
+                *hotfix*)
+                  if [ -z "$PREFIX" ]; then
+                    PREFIX="hotfix/"
+                    echo "DEBUG: Found 'hotfix' label, setting prefix to 'hotfix/'"
+                  fi
+                  ;;
+                *refactor*)
+                  if [ -z "$PREFIX" ]; then
+                    PREFIX="refactor/"
+                    echo "DEBUG: Found 'refactor' label, setting prefix to 'refactor/'"
+                  fi
+                  ;;
+                *enhancement*)
+                  if [ -z "$PREFIX" ]; then
+                    PREFIX="enhancement/"
+                    echo "DEBUG: Found 'enhancement' label, setting prefix to 'enhancement/'"
+                  fi
+                  ;;
+              esac
+            fi
+          done <<< "$LABEL_NAMES"
           
           # 전체 브랜치 이름 생성
           BRANCH_NAME="${PREFIX}chistock-#${ISSUE_NUMBER}"
+          
+          echo "DEBUG: Final prefix: '$PREFIX'"
+          echo "DEBUG: Final branch name: '$BRANCH_NAME'"
           
           echo "prefix=${PREFIX}" >> $GITHUB_OUTPUT
           echo "branch_name=${BRANCH_NAME}" >> $GITHUB_OUTPUT
@@ -74,8 +111,9 @@ jobs:
       
       - name: Debug output
         run: |
-          echo "Determined prefix: ${{ steps.get_prefix.outputs.prefix }}"
-          echo "Branch name will be: ${{ steps.get_prefix.outputs.branch_name }}"
+          echo "Determined prefix: '${{ steps.get_prefix.outputs.prefix }}'"
+          echo "Branch name will be: '${{ steps.get_prefix.outputs.branch_name }}'"
+          echo "Issue number: ${{ steps.get_prefix.outputs.issue_number }}"
       
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -112,6 +150,9 @@ jobs:
             if (prefix) {
               prTitle = `[${prefix.toUpperCase()}] ${prTitle}`;
             }
+            
+            console.log(`Creating PR for branch: ${branchName}`);
+            console.log(`PR title: ${prTitle}`);
             
             // PR 생성
             const pr = await github.rest.pulls.create({
@@ -172,8 +213,17 @@ jobs:
             echo "Found issue number: $ISSUE_NUMBER"
             echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
           else
-            echo "No issue reference found in PR body"
-            echo "issue_number=" >> $GITHUB_OUTPUT
+            # 또는 브랜치 이름에서 이슈 번호 추출
+            BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+            echo "Branch name: $BRANCH_NAME"
+            if [[ "$BRANCH_NAME" =~ chistock-#([0-9]+) ]]; then
+              ISSUE_NUMBER="${BASH_REMATCH[1]}"
+              echo "Found issue number from branch name: $ISSUE_NUMBER"
+              echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+            else
+              echo "No issue reference found"
+              echo "issue_number=" >> $GITHUB_OUTPUT
+            fi
           fi
       
       - name: Update issue status to DONE
@@ -196,7 +246,6 @@ jobs:
               });
               
               // GitHub Projects를 사용한다면, 이슈에 "DONE" 라벨 추가
-              // 또는 특정 프로젝트 컬럼으로 이동시키는 로직을 추가할 수 있습니다
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -225,7 +274,7 @@ jobs:
               });
             }
 
-  # PR이 재열렸을 때 이슈 상태 업데이트 (옵션)
+  # PR이 재열렸을 때 이슈 상태 업데이트
   update_issue_on_pr_reopen:
     runs-on: ubuntu-latest
     if: |
@@ -248,9 +297,47 @@ jobs:
             echo "Found issue number: $ISSUE_NUMBER"
             echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
           else
-            echo "No issue reference found in PR body"
-            echo "issue_number=" >> $GITHUB_OUTPUT
+            # 또는 브랜치 이름에서 이슈 번호 추출
+            BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+            echo "Branch name: $BRANCH_NAME"
+            if [[ "$BRANCH_NAME" =~ chistock-#([0-9]+) ]]; then
+              ISSUE_NUMBER="${BASH_REMATCH[1]}"
+              echo "Found issue number from branch name: $ISSUE_NUMBER"
+              echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+            else
+              echo "No issue reference found"
+              echo "issue_number=" >> $GITHUB_OUTPUT
+            fi
           fi
+      
+      - name: Ensure IN PROGRESS label exists
+        if: steps.extract_issue_reopen.outputs.issue_number != ''
+        uses: actions/github-script@v6
+        with:
+          script: |
+            try {
+              // IN PROGRESS 라벨이 존재하는지 확인하고 없으면 생성
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'IN PROGRESS'
+              });
+              console.log('IN PROGRESS label already exists');
+            } catch (error) {
+              if (error.status === 404) {
+                // 라벨이 없으면 생성
+                console.log('Creating IN PROGRESS label');
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: 'IN PROGRESS',
+                  color: '0366d6', // 파란색
+                  description: '작업 진행 중인 이슈'
+                });
+              } else {
+                throw error;
+              }
+            }
       
       - name: Update issue status to IN PROGRESS
         if: steps.extract_issue_reopen.outputs.issue_number != ''
@@ -272,14 +359,17 @@ jobs:
               });
               
               // DONE 라벨 제거 (존재한다면)
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                name: 'DONE'
-              }).catch(() => {
-                console.log('DONE label not found, skipping removal');
-              });
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  name: 'DONE'
+                });
+                console.log('Removed DONE label');
+              } catch (e) {
+                console.log('DONE label not found or already removed');
+              }
               
               // IN PROGRESS 라벨 추가
               await github.rest.issues.addLabels({
@@ -301,20 +391,16 @@ jobs:
               
             } catch (error) {
               console.error(`Error updating issue #${issueNumber}:`, error);
+              // 에러 발생시 PR에 코멘트 추가
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: `⚠️ **자동 이슈 상태 업데이트 실패**\n이슈 #${issueNumber}를 IN PROGRESS 상태로 변경하는데 실패했습니다. 수동으로 처리해주세요.\n\n에러: ${error.message}`
+              });
             }
-
-      - name: Add IN PROGRESS label to issue
-        if: github.event_name == 'issues' && github.event.action == 'opened'
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const issue = context.payload.issue;
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issue.number,
-              labels: ['IN PROGRESS']
-            });
+            }
+            
       # - name: Comment on issue
       #   uses: actions/github-script@v6
       #   with:
