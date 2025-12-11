@@ -16,6 +16,7 @@ permissions:
   pull-requests: write
   issues: write
   checks: write
+  projects: write
 
 jobs:
   create_issue_branch_job:
@@ -272,6 +273,7 @@ jobs:
     permissions:
       issues: write
       pull-requests: read
+      projects: write
     
     steps:
       - name: Debug event context
@@ -345,6 +347,8 @@ jobs:
       - name: Update issue status to IN PROGRESS
         if: steps.extract_issue_reopen.outputs.issue_number != '' && steps.check_issue.outputs.issue_exists == 'true'
         uses: actions/github-script@v6
+        env:
+          PROJECT_NAME: "test"
         with:
           script: |
             const issueNumber = parseInt('${{ steps.extract_issue_reopen.outputs.issue_number }}');
@@ -363,8 +367,83 @@ jobs:
               
               console.log(`Current issue state: ${issue.data.state}`);
               console.log(`Current issue labels: ${issue.data.labels.map(l => l.name).join(', ')}`);
+
+              // 2. Projects 보드 찾기 및 상태 업데이트
+              try {
+                console.log('Updating Projects status to "In progress"...');
+                
+                // 프로젝트 찾기
+                const projects = await github.rest.projects.listForRepo({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo
+                });
+                
+                const project = projects.data.find(p => p.name === process.env.PROJECT_NAME);
+                
+                if (project) {
+                  console.log(`Found project: ${project.name} (ID: ${project.id})`);
+                  
+                  // 프로젝트 컬럼 찾기
+                  const columns = await github.rest.projects.listColumns({
+                    project_id: project.id
+                  });
+                  
+                  console.log(`Found ${columns.data.length} columns`);
+                  
+                  // In progress 컬럼 찾기 (컬럼 이름으로)
+                  let targetColumn = null;
+                  for (const column of columns.data) {
+                    const columnDetails = await github.rest.projects.getColumn({
+                      column_id: column.id
+                    });
+                    console.log(`Column: ${columnDetails.data.name} (ID: ${column.id})`);
+                    
+                    if (columnDetails.data.name.toLowerCase().includes('in progress') || 
+                        columnDetails.data.name.toLowerCase().includes('progress')) {
+                      targetColumn = column;
+                      console.log(`Found In progress column: ${columnDetails.data.name}`);
+                      break;
+                    }
+                  }
+                  
+                  if (!targetColumn) {
+                    // 기본적으로 두 번째 컬럼을 In progress로 가정
+                    if (columns.data.length >= 2) {
+                      targetColumn = columns.data[1];
+                      console.log(`Using column at index 1 as In progress: ${targetColumn.name}`);
+                    }
+                  }
+                  
+                  if (targetColumn) {
+                    // 이슈가 이미 프로젝트에 있는지 확인하고 이동
+                    try {
+                      // 먼저 이슈가 있는 카드 찾기
+                      const cards = await github.rest.projects.listCards({
+                        column_id: targetColumn.id,
+                        archived_state: 'not_archived'
+                      });
+                      
+                      // 이슈를 해당 컬럼으로 이동
+                      // GitHub Projects API는 카드를 생성하여 컬럼에 추가
+                      await github.rest.projects.createCard({
+                        column_id: targetColumn.id,
+                        content_id: issue.data.id,
+                        content_type: 'Issue'
+                      });
+                      
+                      console.log(`✅ Moved issue to In progress column in Projects`);
+                    } catch (cardError) {
+                      console.log('Card creation error, may already exist:', cardError.message);
+                    }
+                  }
+                } else {
+                  console.log(`⚠️ Project "${process.env.PROJECT_NAME}" not found`);
+                }
+              } catch (projectError) {
+                console.log('Error updating Projects status:', projectError.message);
+              }
               
-              // 2. 이슈가 closed 상태라면 open으로 변경
+              // 3. 이슈가 closed 상태라면 open으로 변경
               if (issue.data.state === 'closed') {
                 console.log('Issue is closed, reopening it...');
                 await github.rest.issues.update({
@@ -375,7 +454,7 @@ jobs:
                 });
               }
              
-              // 3. 이슈에 코멘트 추가
+              // 4. 이슈에 코멘트 추가
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
