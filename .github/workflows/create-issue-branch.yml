@@ -34,156 +34,105 @@ jobs:
       !contains(github.event.issue.labels.*.name, 'env')
 
     steps:
+      - name: Determine branch name
+        id: branch
+        run: |
+          ISSUE_NUMBER=${{ github.event.issue.number }}
+          
+          # 기본 브랜치 이름: chistock-#{number}
+          BASE_NAME="chistock-#${ISSUE_NUMBER}"
+          
+          # 레이블에 따라 prefix 추가
+          LABELS='${{ toJSON(github.event.issue.labels) }}'
+          
+          if echo "${LABELS}" | grep -q '"name":"bug"'; then
+            BRANCH_NAME="bugfix/${BASE_NAME}"
+          elif echo "${LABELS}" | grep -q '"name":"feature"'; then
+            BRANCH_NAME="feature/${BASE_NAME}"
+          elif echo "${LABELS}" | grep -q '"name":"hotfix"'; then
+            BRANCH_NAME="hotfix/${BASE_NAME}"
+          elif echo "${LABELS}" | grep -q '"name":"refactor"'; then
+            BRANCH_NAME="refactor/${BASE_NAME}"
+          else
+            BRANCH_NAME="${BASE_NAME}"
+          fi
+          
+          echo "name=${BRANCH_NAME}" >> $GITHUB_OUTPUT
+          echo "base=${BASE_NAME}" >> $GITHUB_OUTPUT
+      
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Determine branch type from labels
-        id: get_branch_type
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Create and push branch
         run: |
-          BRANCH_TYPE="issuefix"
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           
-          # 이슈의 라벨 확인
-          LABELS='${{ toJSON(github.event.issue.labels) }}'
-          
-          if echo "$LABELS" | grep -q '"name":"bug"'; then
-            BRANCH_TYPE="bugfix"
-          elif echo "$LABELS" | grep -q '"name":"feature"'; then
-            BRANCH_TYPE="feature"
-          elif echo "$LABELS" | grep -q '"name":"refactor"'; then
-            BRANCH_TYPE="refactor"
-          elif echo "$LABELS" | grep -q '"name":"test"'; then
-            BRANCH_TYPE="test"
-          fi
-          
-          echo "branch_type=$BRANCH_TYPE" >> $GITHUB_OUTPUT
-          echo "Determined branch type: $BRANCH_TYPE"
-
-      - name: Create Issue Branch and PR
-        uses: robvanderleek/create-issue-branch@main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 브랜치 이름 설정
-          CREATE_ISSUE_BRANCH_NAME_TEMPLATE: "${{ steps.get_branch_type.outputs.branch_type }}/chistock-#${NUMBER}"
-          # PR 제목 설정
-          CREATE_ISSUE_BRANCH_TITLE_TEMPLATE: "[chistock-#${NUMBER}] ${TITLE}"
-          # PR 본문 설정
-          CREATE_ISSUE_BRANCH_BODY_TEMPLATE: |
-            ## 관련 이슈
-            Resolves #${NUMBER}
-            
-            ## 변경 사항
-            이슈 #${NUMBER}를 해결하기 위한 PR입니다.
-            
-            ## 작업 내용
-            - [ ] 작업 내용을 입력해주세요
-            
-            ## 테스트
-            - [ ] 테스트를 완료했습니다
-            
-          # 기능 설정
-          CREATE_ISSUE_BRANCH_AUTO_LINK_ISSUE: "true"
-          CREATE_ISSUE_BRANCH_AUTO_CLOSE_ISSUE: "false"
-          CREATE_ISSUE_BRANCH_OPEN_DRAFT_PR: "true"
-          CREATE_ISSUE_BRANCH_COPY_ISSUE_LABELS_TO_PR: "true"
-          CREATE_ISSUE_BRANCH_COPY_ISSUE_ASSIGNEE_TO_PR: "true"
-          CREATE_ISSUE_BRANCH_COPY_ISSUE_PROJECTS_TO_PR: "true"
-          CREATE_ISSUE_BRANCH_COPY_ISSUE_MILESTONE_TO_PR: "true"
-          
-          # 기본 브랜치 및 기타 설정
-          CREATE_ISSUE_BRANCH_DEFAULT_BRANCH: "main"
-          CREATE_ISSUE_BRANCH_SILENT: "false"
-          CREATE_ISSUE_BRANCH_SKIP_BRANCH_FOR_EXISTING_PR: "true"
-          CREATE_ISSUE_BRANCH_COMMENT_ON_ISSUE: "true"
-          CREATE_ISSUE_BRANCH_BRANCH_NAME_FORMAT: "lowercase"
-          CREATE_ISSUE_BRANCH_REPLACE_INVALID_CHARACTERS: "true"
-          
-          # 특정 라벨 건너뛰기
-          CREATE_ISSUE_BRANCH_SKIP_LABELS: "docs,release,sub_issue,duplicate,invalid,question,wontfix,env"
-
-      - name: Notify on success
-        if: success()
+          # 브랜치 생성 및 푸시
+          git checkout -b "${{ steps.branch.outputs.name }}"
+          git push -u origin "${{ steps.branch.outputs.name }}"
+      
+      - name: Create Pull Request
+        id: create_pr
         uses: actions/github-script@v6
         with:
           script: |
             const issue = context.payload.issue;
-            const branchType = '${{ steps.get_branch_type.outputs.branch_type }}';
-            const branchName = `${branchType}/chistock-#${issue.number}`.toLowerCase();
+            const branchName = '${{ steps.branch.outputs.name }}';
             
+            // PR 생성
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `chistock-#${issue.number}: ${issue.title}`,
+              head: branchName,
+              base: 'main',
+              body: `## 📌 관련 이슈\nResolves #${issue.number}\n\n## 📝 설명\n${issue.body || '이슈 해결을 위한 변경사항입니다.'}\n\n---\n*자동 생성된 PR입니다.*`,
+              draft: true
+            });
+            
+            // 라벨 복사
+            if (issue.labels && issue.labels.length > 0) {
+              const labels = issue.labels.map(label => label.name);
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.data.number,
+                labels: labels
+              });
+            }
+            
+            // Assignee 복사
+            if (issue.assignees && issue.assignees.length > 0) {
+              const assignees = issue.assignees.map(assignee => assignee.login);
+              await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.data.number,
+                assignees: assignees
+              });
+            }
+            
+            return pr.data.number;
+      
+      - name: Update issue with branch info
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const branchName = '${{ steps.branch.outputs.name }}';
+            const prNumber = '${{ steps.create_pr.outputs.result }}';
+            
+            // 이슈에 코멘트 추가
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issue.number,
-              body: `✅ 브랜치 및 PR이 생성되었습니다!\n\n**브랜치**: \`${branchName}\`\n**이슈**: #${issue.number}\n\n작업을 시작해주세요!\n\n생성된 PR에서 작업을 진행해주시기 바랍니다.`
+              body: `🎉 **브랜치 및 PR이 생성되었습니다!**\n\n` +
+                    `**브랜치**: \`${branchName}\`\n` +
+                    `**PR**: #${prNumber}\n\n` +
+                    `해당 브랜치에서 작업을 시작해주세요.`
             });
-
-  # PR 머지 때 이슈 자동 닫기
-  close_issue_on_pr_merge:
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request' &&
-      github.event.action == 'closed' &&
-      github.event.pull_request.merged == true
-    
-    permissions:
-      issues: write
-    
-    steps:
-      - name: Extract issue number from PR
-        id: extract-issue
-        run: |
-          PR_BODY="${{ github.event.pull_request.body }}"
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          
-          # PR 본문에서 이슈 번호 추출
-          ISSUE_FROM_BODY=$(echo "$PR_BODY" | grep -oE "(Resolves|Closes|Fixes|Fix)\s+#[0-9]+" | head -1 | grep -oE "[0-9]+" || echo "")
-          
-          # PR 제목에서 이슈 번호 추출 (형식: [chistock-#123])
-          ISSUE_FROM_TITLE=$(echo "$PR_TITLE" | grep -oE "\[chistock-#([0-9]+)\]" | head -1 | grep -oE "[0-9]+" || echo "")
-          
-          # 우선순위: 본문 > 제목
-          if [ -n "$ISSUE_FROM_BODY" ]; then
-            ISSUE_NUMBER="$ISSUE_FROM_BODY"
-          elif [ -n "$ISSUE_FROM_TITLE" ]; then
-            ISSUE_NUMBER="$ISSUE_FROM_TITLE"
-          else
-            ISSUE_NUMBER=""
-          fi
-          
-          if [ -n "$ISSUE_NUMBER" ]; then
-            echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
-            echo "Found issue number: $ISSUE_NUMBER"
-          else
-            echo "No issue number found in PR"
-          fi
-      
-      - name: Close related issue
-        if: steps.extract-issue.outputs.issue_number != ''
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const issueNumber = parseInt('${{ steps.extract-issue.outputs.issue_number }}');
-            const prNumber = context.payload.pull_request.number;
-            
-            if (issueNumber && !isNaN(issueNumber)) {
-              try {
-                await github.rest.issues.update({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: issueNumber,
-                  state: 'closed'
-                });
-                
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: issueNumber,
-                  body: `✅ PR #${prNumber}이(가) 머지되어 이슈를 닫습니다.`
-                });
-                
-                console.log(`Successfully closed issue #${issueNumber}`);
-              } catch (error) {
-                console.error(`Error closing issue #${issueNumber}:`, error);
-              }
-            }
