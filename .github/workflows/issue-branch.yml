@@ -2,7 +2,7 @@ branchName: "chistock-#${issue.number}"
 autoCloseIssue: true
 openDraftPR: true
 copyIssueLabelsToPR: true
-# copyIssueAssigneeToPR: true
+copyIssueAssigneeToPR: true
 copyIssueBodyToPR: true
 draftPRTitle: "chistock-#${issue.number}: ${issue.title}"
 
@@ -14,8 +14,7 @@ branches:
   - label: env
     skip: true
   - label: feature
-    name: "feature/chistock-#${issue.number}"
-    skipNamePatterns: []
+    prefix: feature/
   - label: duplicate
     skip: true
   - label: refactor
