@@ -44,91 +44,63 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # 브랜치 이름 템플릿
-          branchName: "chistock-#${{ github.event.issue.number }}"
-          
-          # 레이블-브랜치 매핑 설정
-          branch: |
-            [
-              {
-                "label": "bug",
-                "name": "bugfix/chistock-#${{ github.event.issue.number }}"
-              },
-              {
-                "label": "feature",
-                "name": "feature/chistock-#${{ github.event.issue.number }}"
-              },
-              {
-                "label": "refactor",
-                "name": "refactor/chistock-#${{ github.event.issue.number }}"
-              },
-              {
-                "label": "test",
-                "name": "test/chistock-#${{ github.event.issue.number }}"
-              },
-              {
-                "label": "issue",
-                "name": "issuefix/chistock-#${{ github.event.issue.number }}"
-              },
-              {
-                "label": "docs",
-                "skip": true
-              },
-              {
-                "label": "release",
-                "skip": true
-              },
-              {
-                "label": "duplicate",
-                "skip": true
-              },
-              {
-                "label": "invalid",
-                "skip": true
-              },
-              {
-                "label": "wontfix",
-                "skip": true
-              },
-              {
-                "label": "env",
-                "skip": true
-              },
-              {
-                "label": "question",
-                "skip": true
-              }
-            ]
-          
-          # 기능 설정
-          autoCloseIssue: false
-          openDraftPR: true
-          copyIssueLabelsToPR: true
-          copyIssueAssigneeToPR: true
-          copyIssueBodyToPR: true
-          copyIssueProjectsToPR: true
-          copyIssueMilestoneToPR: true
-          
-          # PR 설정 개선
-          draftPRTitle: "[chistock-#${{ github.event.issue.number }}] ${{ github.event.issue.title }}"
-          draftPRBody: |
-            ## 관련 이슈
-            Resolves #${{ github.event.issue.number }}
-            
-            ## 변경 사항
-            이슈 #${{ github.event.issue.number }}를 해결하기 위한 PR입니다.
-          
-          # 기본 브랜치 설정
-          defaultBranch: "main"
-          
-          # 기타 설정
-          silent: false
-          skipBranchForExistingPR: true  # PR이 있으면 브랜치 생성 건너뛰기
-          commentOnIssue: true  # 코멘트 추가
-          
-          # 브랜치 이름 포맷 설정 추가
-          branchNameFormat: "lowercase"  # 브랜치 이름을 소문자로
-          replaceInvalidCharacters: true  # 유효하지 않은 문자 교체
+          config: |
+            branches:
+              - label: bug
+                name: "bugfix/chistock-#${{ github.event.issue.number }}"
+              - label: feature
+                name: "feature/chistock-#${{ github.event.issue.number }}"
+              - label: refactor
+                name: "refactor/chistock-#${{ github.event.issue.number }}"
+              - label: test
+                name: "test/chistock-#${{ github.event.issue.number }}"
+              - label: issue
+                name: "issuefix/chistock-#${{ github.event.issue.number }}"
+              - label: docs
+                skip: true
+              - label: release
+                skip: true
+              - label: duplicate
+                skip: true
+              - label: invalid
+                skip: true
+              - label: wontfix
+                skip: true
+              - label: env
+                skip: true
+              - label: question
+                skip: true
+
+            # 기능 설정
+            autoLinkIssue: true
+            autoCloseIssue: false
+            openDraftPR: true
+            copyIssueLabelsToPR: true
+            copyIssueAssigneeToPR: true
+            copyIssueBodyToPR: false  # 기본 템플릿 사용
+            copyIssueProjectsToPR: true
+            copyIssueMilestoneToPR: true
+            # PR 설정 개선
+            draftPRTitle: "[chistock-#${{ github.event.issue.number }}] ${{ github.event.issue.title }}"
+            draftPRBody: |
+              ## 관련 이슈
+              Resolves #${{ github.event.issue.number }}
+              ## 변경 사항
+              이슈 #${{ github.event.issue.number }}를 해결하기 위한 PR입니다.
+              ## 작업 내용
+              - [ ] 작업 내용을 입력해주세요
+              
+              ## 테스트
+              - [ ] 테스트를 완료했습니다
+            # 기본 브랜치 설정
+            defaultBranch: "main"
+            # 기타 설정
+            silent: false
+            skipBranchForExistingPR: true
+            commentOnIssue: true
+            # 브랜치 이름 포맷 설정 추가
+            branchNameFormat: "lowercase"
+            replaceInvalidCharacters: true
           
       # 추가 단계: 생성 완료 후 알림
       - name: Notify on success
