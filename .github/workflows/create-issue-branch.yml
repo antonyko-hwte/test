@@ -48,16 +48,16 @@ jobs:
           PREFIX=""
           
           # 레이블별 prefix 매핑
-          if echo "$LABELS" | grep -i '"name":"bug"'; then
+          if echo "$LABELS" | grep -i '"bug"'; then
             PREFIX="bugfix/"
             echo "DEBUG: Found 'bug' label"
-          elif echo "$LABELS" | grep -i '"name":"feature"'; then
+          elif echo "$LABELS" | grep -i '"feature"'; then
             PREFIX="feature/"
             echo "DEBUG: Found 'feature' label"
-          elif echo "$LABELS" | grep -i '"name":"hotfix"'; then
+          elif echo "$LABELS" | grep -i '"hotfix"'; then
             PREFIX="hotfix/"
             echo "DEBUG: Found 'hotfix' label"
-          elif echo "$LABELS" | grep -i '"name":"refactor"'; then
+          elif echo "$LABELS" | grep -i '"refactor"'; then
             PREFIX="refactor/"
             echo "DEBUG: Found 'refactor' label"
           else
@@ -302,7 +302,19 @@ jobs:
             } catch (error) {
               console.error(`Error updating issue #${issueNumber}:`, error);
             }
-      
+
+      - name: Add IN PROGRESS label to issue
+        if: github.event_name == 'issues' && github.event.action == 'opened'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issue = context.payload.issue;
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: ['IN PROGRESS']
+            });
       # - name: Comment on issue
       #   uses: actions/github-script@v6
       #   with:
