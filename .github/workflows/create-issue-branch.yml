@@ -201,27 +201,27 @@ jobs:
       - name: Extract issue number from PR body
         id: extract_issue
         run: |
-          PR_BODY="${{ github.event.pull_request.body }}"
-          echo "PR Body: $PR_BODY"
+          # PR_BODY="${{ github.event.pull_request.body }}"
+          # echo "PR Body: $PR_BODY"
           
-          # PR 본문에서 "Resolves #이슈번호" 패턴 찾기
-          if [[ "$PR_BODY" =~ Resolves\ *#([0-9]+) ]]; then
+          # # PR 본문에서 "Resolves #이슈번호" 패턴 찾기
+          # if [[ "$PR_BODY" =~ Resolves\ *#([0-9]+) ]]; then
+          #   ISSUE_NUMBER="${BASH_REMATCH[1]}"
+          #   echo "Found issue number: $ISSUE_NUMBER"
+          #   echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+          # else
+          # 브랜치 이름에서 이슈 번호 추출
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          echo "Branch name: $BRANCH_NAME"
+          if [[ "$BRANCH_NAME" =~ chistock-#([0-9]+) ]]; then
             ISSUE_NUMBER="${BASH_REMATCH[1]}"
-            echo "Found issue number: $ISSUE_NUMBER"
+            echo "Found issue number from branch name: $ISSUE_NUMBER"
             echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
           else
-            # 브랜치 이름에서 이슈 번호 추출
-            BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
-            echo "Branch name: $BRANCH_NAME"
-            if [[ "$BRANCH_NAME" =~ chistock-#([0-9]+) ]]; then
-              ISSUE_NUMBER="${BASH_REMATCH[1]}"
-              echo "Found issue number from branch name: $ISSUE_NUMBER"
-              echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
-            else
-              echo "No issue reference found"
-              echo "issue_number=" >> $GITHUB_OUTPUT
-            fi
+            echo "No issue reference found"
+            echo "issue_number=" >> $GITHUB_OUTPUT
           fi
+          # fi
       
       - name: Update issue status to DONE
         if: steps.extract_issue.outputs.issue_number != ''
