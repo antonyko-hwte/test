@@ -245,14 +245,6 @@ jobs:
                 body: `✅ **이슈 해결됨**\n연결된 PR #${prNumber}이(가) merge되었습니다. 이슈를 DONE 상태로 변경합니다.`
               });
               
-              // GitHub Projects를 사용한다면, 이슈에 "DONE" 추가
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                labels: ['DONE']
-              });
-              
               // 이슈를 closed 상태로 변경
               await github.rest.issues.update({
                 owner: context.repo.owner,
@@ -354,41 +346,6 @@ jobs:
             echo "issue_exists=false" >> $GITHUB_OUTPUT
           fi
       
-      - name: Ensure status labels exist
-        if: steps.extract_issue_reopen.outputs.issue_number != '' && steps.check_issue.outputs.issue_exists == 'true'
-        uses: actions/github-script@v6
-        with:
-          script: |
-            // 라벨들 확인
-            const labelsToCreate = [
-              { name: 'IN PROGRESS', color: '0366d6', description: '작업 진행 중인 이슈' },
-              { name: 'DONE', color: '0e8a16', description: '완료된 이슈' }
-            ];
-            
-            for (const label of labelsToCreate) {
-              try {
-                await github.rest.issues.getLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  name: label.name
-                });
-                console.log(`Label '${label.name}' already exists`);
-              } catch (error) {
-                if (error.status === 404) {
-                  console.log(`Creating label '${label.name}'`);
-                  await github.rest.issues.createLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name: label.name,
-                    color: label.color,
-                    description: label.description
-                  });
-                } else {
-                  console.error(`Error checking label '${label.name}':`, error.message);
-                }
-              }
-            }
-      
       - name: Update issue status to IN PROGRESS
         if: steps.extract_issue_reopen.outputs.issue_number != '' && steps.check_issue.outputs.issue_exists == 'true'
         uses: actions/github-script@v6
@@ -421,38 +378,8 @@ jobs:
                   state: 'open'
                 });
               }
-              
-              // 3. 기존 상태 라벨들 제거
-              const statusLabels = ['DONE', 'TODO', 'BACKLOG', 'IN REVIEW', 'READY FOR REVIEW'];
-              
-              for (const label of statusLabels) {
-                try {
-                  await github.rest.issues.removeLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: issueNumber,
-                    name: label
-                  });
-                  console.log(`Removed label: ${label}`);
-                } catch (e) {
-                  // 라벨이 없으면 무시
-                  if (e.status !== 404) {
-                    console.log(`Label '${label}' not found or already removed`);
-                  }
-                }
-              }
-              
-              // 4. IN PROGRESS 추가
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                labels: ['IN PROGRESS']
-              });
-              
-              console.log('Added IN PROGRESS label');
-              
-              // 5. 이슈에 코멘트 추가
+             
+              // 3. 이슈에 코멘트 추가
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
