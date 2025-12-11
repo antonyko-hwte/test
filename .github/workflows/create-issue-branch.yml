@@ -45,34 +45,30 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           # 브랜치 이름 템플릿
-          branchName: "${branch.prefix}chistock-#${{ github.event.issue.number }}"
+          branchName: "chistock-#${{ github.event.issue.number }}"
           
           # 레이블-브랜치 매핑 설정
-          branches: |
+          branch: |
             [
               {
                 "label": "bug",
-                "prefix": "bugfix/"
+                "name": "bugfix/chistock-#${{ github.event.issue.number }}"
               },
               {
                 "label": "feature",
-                "prefix": "feature/"
-              },
-              {
-                "label": "hotfix",
-                "prefix": "hotfix/"
+                "name": "feature/chistock-#${{ github.event.issue.number }}"
               },
               {
                 "label": "refactor",
-                "prefix": "refactor/"
+                "name": "refactor/chistock-#${{ github.event.issue.number }}"
               },
               {
                 "label": "test",
-                "prefix": "test/"
+                "name": "test/chistock-#${{ github.event.issue.number }}"
               },
               {
                 "label": "issue",
-                "prefix": "issuefix/"
+                "name": "issuefix/chistock-#${{ github.event.issue.number }}"
               },
               {
                 "label": "docs",
