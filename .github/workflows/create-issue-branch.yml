@@ -35,4 +35,5 @@ jobs:
             duplicate=skip
             invalid=skip
             env=skip
+            question=skip
             wontfix=skip
