@@ -26,7 +26,7 @@ jobs:
     steps:
       - name: Create Issue Branch
         uses: robvanderleek/create-issue-branch@main
-        env:
+        with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CONFIG_BRANCH_NAME: "${branch.prefix}chistock-#${{ github.event.issue.number }}"
           CONFIG_BRANCHES: |
