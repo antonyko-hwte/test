@@ -1,4 +1,4 @@
-branchName: "chistock-#${issue.number}"
+# branchName: "chistock-#${issue.number}"
 autoCloseIssue: true
 openDraftPR: true
 copyIssueLabelsToPR: true
