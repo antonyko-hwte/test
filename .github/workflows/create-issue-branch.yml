@@ -349,7 +349,7 @@ jobs:
           script: |
             const issueNumber = parseInt('${{ steps.extract_issue_reopen.outputs.issue_number }}');
             const prNumber = ${{ github.event.pull_request.number }};
-            const prUrl = ${{ github.event.pull_request.html_url }};
+            # const prUrl = ${{ github.event.pull_request.html_url }};
             
             console.log(`PR #${prNumber} was reopened, updating linked issue #${issueNumber} to IN PROGRESS`);
             
