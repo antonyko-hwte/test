@@ -6,7 +6,9 @@ on:
   issue_comment:
     types: [created]
   pull_request:
-    types: [closed]
+    types: [closed, reopened]
+  pull_request_target:
+    types: [closed, reopened]
 
 # 권한 설정
 permissions:
@@ -145,6 +147,161 @@ jobs:
             }
             
             return pr.data.number;
+
+  # PR이 닫힐 때 이슈 상태 업데이트
+  update_issue_on_pr_close:
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true
+    permissions:
+      issues: write
+      pull-requests: read
+    
+    steps:
+      - name: Extract issue number from PR body
+        id: extract_issue
+        run: |
+          PR_BODY="${{ github.event.pull_request.body }}"
+          echo "PR Body: $PR_BODY"
+          
+          # PR 본문에서 "Resolves #이슈번호" 패턴 찾기
+          if [[ "$PR_BODY" =~ Resolves\ *#([0-9]+) ]]; then
+            ISSUE_NUMBER="${BASH_REMATCH[1]}"
+            echo "Found issue number: $ISSUE_NUMBER"
+            echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+          else
+            echo "No issue reference found in PR body"
+            echo "issue_number=" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Update issue status to DONE
+        if: steps.extract_issue.outputs.issue_number != ''
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issueNumber = ${{ steps.extract_issue.outputs.issue_number }};
+            const prNumber = ${{ github.event.pull_request.number }};
+            
+            console.log(`Updating issue #${issueNumber} status to DONE (linked to PR #${prNumber})`);
+            
+            try {
+              // 이슈에 코멘트 추가 (PR이 merge되었음을 알림)
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: `✅ **이슈 해결됨**\n연결된 PR #${prNumber}이(가) merge되었습니다. 이슈를 DONE 상태로 변경합니다.`
+              });
+              
+              // GitHub Projects를 사용한다면, 이슈에 "DONE" 라벨 추가
+              // 또는 특정 프로젝트 컬럼으로 이동시키는 로직을 추가할 수 있습니다
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                labels: ['DONE']
+              });
+              
+              // 이슈를 closed 상태로 변경
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                state: 'closed'
+              });
+              
+              console.log(`Successfully updated issue #${issueNumber} to DONE`);
+              
+            } catch (error) {
+              console.error(`Error updating issue #${issueNumber}:`, error);
+              // 에러 발생시 PR에 코멘트 추가
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: `⚠️ **자동 이슈 상태 업데이트 실패**\n이슈 #${issueNumber}를 DONE 상태로 변경하는데 실패했습니다. 수동으로 처리해주세요.\n\n에러: ${error.message}`
+              });
+            }
+
+  # PR이 재열렸을 때 이슈 상태 업데이트 (옵션)
+  update_issue_on_pr_reopen:
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') &&
+      github.event.action == 'reopened'
+    permissions:
+      issues: write
+      pull-requests: read
+    
+    steps:
+      - name: Extract issue number from PR body
+        id: extract_issue_reopen
+        run: |
+          PR_BODY="${{ github.event.pull_request.body }}"
+          echo "PR Body: $PR_BODY"
+          
+          # PR 본문에서 "Resolves #이슈번호" 패턴 찾기
+          if [[ "$PR_BODY" =~ Resolves\ *#([0-9]+) ]]; then
+            ISSUE_NUMBER="${BASH_REMATCH[1]}"
+            echo "Found issue number: $ISSUE_NUMBER"
+            echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+          else
+            echo "No issue reference found in PR body"
+            echo "issue_number=" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Update issue status to IN PROGRESS
+        if: steps.extract_issue_reopen.outputs.issue_number != ''
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issueNumber = ${{ steps.extract_issue_reopen.outputs.issue_number }};
+            const prNumber = ${{ github.event.pull_request.number }};
+            
+            console.log(`Updating issue #${issueNumber} status to IN PROGRESS (PR #${prNumber} reopened)`);
+            
+            try {
+              // 이슈 재오픈
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                state: 'open'
+              });
+              
+              // DONE 라벨 제거 (존재한다면)
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                name: 'DONE'
+              }).catch(() => {
+                console.log('DONE label not found, skipping removal');
+              });
+              
+              // IN PROGRESS 라벨 추가
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                labels: ['IN PROGRESS']
+              });
+              
+              // 이슈에 코멘트 추가
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: `🔄 **이슈 재개됨**\n연결된 PR #${prNumber}이(가) 재열렸습니다. 이슈를 IN PROGRESS 상태로 변경합니다.`
+              });
+              
+              console.log(`Successfully updated issue #${issueNumber} to IN PROGRESS`);
+              
+            } catch (error) {
+              console.error(`Error updating issue #${issueNumber}:`, error);
+            }
       
       # - name: Comment on issue
       #   uses: actions/github-script@v6
