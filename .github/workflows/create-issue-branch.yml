@@ -277,128 +277,71 @@ jobs:
   # PR이 재열렸을 때 이슈 상태 업데이트
   update_issue_on_pr_reopen:
     runs-on: ubuntu-latest
-    # 주의: github.event.pull_request.merged == true 조건을 제거했습니다
-    if: |
-      (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') &&
-      github.event.action == 'reopened'
-    permissions:
-      issues: write
-      pull-requests: read
+    if: github.event_name == 'pull_request' && github.event.action == 'reopened'
     
     steps:
-      - name: Debug event context
+      - name: Log event info
         run: |
-          echo "Event name: ${{ github.event_name }}"
-          echo "Event action: ${{ github.event.action }}"
-          echo "PR number: ${{ github.event.pull_request.number }}"
-          echo "PR title: ${{ github.event.pull_request.title }}"
-          echo "PR head ref: ${{ github.event.pull_request.head.ref }}"
-          echo "PR body preview: ${{ github.event.pull_request.body }}"
+          echo "🔍 PR Reopened Event Triggered"
+          echo "PR Number: ${{ github.event.pull_request.number }}"
+          echo "PR Title: ${{ github.event.pull_request.title }}"
+          echo "PR Head Ref: ${{ github.event.pull_request.head.ref }}"
+          echo "PR Body Preview: ${{ github.event.pull_request.body }}"
       
-      - name: Extract issue number from PR
-        id: extract_issue_reopen
+      - name: Extract issue number
+        id: extract_issue
         run: |
-          # 브랜치 이름에서 추출
-          if [[ -z "$ISSUE_NUMBER" ]]; then
-            BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
-            echo "Branch name: $BRANCH_NAME"
-            if [[ "$BRANCH_NAME" =~ chistock-#([0-9]+) ]]; then
-              ISSUE_NUMBER="${BASH_REMATCH[1]}"
-              echo "Found issue number from branch name: $ISSUE_NUMBER"
-            elif [[ "$BRANCH_NAME" =~ -#([0-9]+) ]]; then
-              ISSUE_NUMBER="${BASH_REMATCH[1]}"
-              echo "Found issue number from branch name pattern: $ISSUE_NUMBER"
-            fi
-          fi
-
-          #  PR 제목에서 추출
-          if [[ -z "$ISSUE_NUMBER" ]]; then
+          # 가장 간단한 방법: 브랜치 이름에서 이슈 번호 추출
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          echo "Branch name: $BRANCH_NAME"
+          
+          ISSUE_NUMBER=""
+          
+          # 패턴1: chistock-#49
+          if [[ "$BRANCH_NAME" =~ chistock-#([0-9]+) ]]; then
+            ISSUE_NUMBER="${BASH_REMATCH[1]}"
+            echo "✅ Found issue number from pattern1: $ISSUE_NUMBER"
+          
+          # 패턴2: feature/chistock-#49, bugfix/chistock-#49 등
+          elif [[ "$BRANCH_NAME" =~ .*chistock-#([0-9]+) ]]; then
+            ISSUE_NUMBER="${BASH_REMATCH[1]}"
+            echo "✅ Found issue number from pattern2: $ISSUE_NUMBER"
+          
+          # 패턴3: PR 제목에서 추출
+          else
             PR_TITLE="${{ github.event.pull_request.title }}"
-            echo "PR title: $PR_TITLE"
+            echo "PR Title: $PR_TITLE"
+            
             if [[ "$PR_TITLE" =~ chistock-#([0-9]+) ]]; then
               ISSUE_NUMBER="${BASH_REMATCH[1]}"
-              echo "Found issue number from PR title: $ISSUE_NUMBER"
+              echo "✅ Found issue number from PR title: $ISSUE_NUMBER"
             elif [[ "$PR_TITLE" =~ \#([0-9]+) ]]; then
               ISSUE_NUMBER="${BASH_REMATCH[1]}"
-              echo "Found issue number from PR title (#): $ISSUE_NUMBER"
+              echo "✅ Found issue number from PR title (#): $ISSUE_NUMBER"
+            else
+              echo "❌ Could not extract issue number"
+              ISSUE_NUMBER=""
             fi
           fi
           
           if [[ -n "$ISSUE_NUMBER" ]]; then
-            echo "✅ Final issue number: $ISSUE_NUMBER"
             echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+            echo "::notice::Extracted issue number: $ISSUE_NUMBER"
           else
-            echo "❌ No issue number found"
             echo "issue_number=" >> $GITHUB_OUTPUT
+            echo "::warning::No issue number found"
           fi
       
-      - name: Check if issue exists
-        if: steps.extract_issue_reopen.outputs.issue_number != ''
-        id: check_issue
-        run: |
-          ISSUE_NUMBER="${{ steps.extract_issue_reopen.outputs.issue_number }}"
-          echo "Checking if issue #${ISSUE_NUMBER} exists..."
-          
-          # 이슈 존재 여부 확인
-          response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/issues/${ISSUE_NUMBER}")
-          
-          issue_state=$(echo "$response" | jq -r '.state // "unknown"')
-          
-          if [[ "$issue_state" != "unknown" && "$issue_state" != "null" ]]; then
-            echo "Issue #${ISSUE_NUMBER} exists with state: ${issue_state}"
-            echo "issue_exists=true" >> $GITHUB_OUTPUT
-            echo "current_state=${issue_state}" >> $GITHUB_OUTPUT
-          else
-            echo "Issue #${ISSUE_NUMBER} does not exist or cannot be accessed"
-            echo "issue_exists=false" >> $GITHUB_OUTPUT
-          fi
-      
-      - name: Ensure status labels exist
-        if: steps.extract_issue_reopen.outputs.issue_number != '' && steps.check_issue.outputs.issue_exists == 'true'
+      - name: Update issue to IN PROGRESS using GitHub Script
+        if: steps.extract_issue.outputs.issue_number != ''
         uses: actions/github-script@v6
         with:
           script: |
-            // 라벨들 확인
-            const labelsToCreate = [
-              { name: 'IN PROGRESS', color: '0366d6', description: '작업 진행 중인 이슈' },
-              { name: 'DONE', color: '0e8a16', description: '완료된 이슈' }
-            ];
+            // 이슈 번호 추출
+            const issueNumber = '${{ steps.extract_issue.outputs.issue_number }}';
+            const prNumber = context.payload.pull_request.number;
             
-            for (const label of labelsToCreate) {
-              try {
-                await github.rest.issues.getLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  name: label.name
-                });
-                console.log(`Label '${label.name}' already exists`);
-              } catch (error) {
-                if (error.status === 404) {
-                  console.log(`Creating label '${label.name}'`);
-                  await github.rest.issues.createLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name: label.name,
-                    color: label.color,
-                    description: label.description
-                  });
-                } else {
-                  console.error(`Error checking label '${label.name}':`, error.message);
-                }
-              }
-            }
-      
-      - name: Update issue status to IN PROGRESS
-        if: steps.extract_issue_reopen.outputs.issue_number != '' && steps.check_issue.outputs.issue_exists == 'true'
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const issueNumber = parseInt('${{ steps.extract_issue_reopen.outputs.issue_number }}');
-            const prNumber = ${{ github.event.pull_request.number }};
-            const prUrl = ${{ github.event.pull_request.html_url }};
-            
-            console.log(`PR #${prNumber} was reopened, updating linked issue #${issueNumber} to IN PROGRESS`);
+            console.log(`🚀 PR #${prNumber} was reopened, updating linked issue #${issueNumber} to IN PROGRESS`);
             
             try {
               // 1. 먼저 이슈 정보 가져오기
@@ -408,12 +351,33 @@ jobs:
                 issue_number: issueNumber
               });
               
-              console.log(`Current issue state: ${issue.data.state}`);
-              console.log(`Current issue labels: ${issue.data.labels.map(l => l.name).join(', ')}`);
+              console.log(`Issue #${issueNumber} found: ${issue.data.title}`);
+              console.log(`Current state: ${issue.data.state}`);
               
-              // 2. 이슈가 closed 상태라면 open으로 변경
+              // 2. IN PROGRESS 라벨이 없으면 생성
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: 'IN PROGRESS'
+                });
+                console.log('IN PROGRESS label exists');
+              } catch (labelError) {
+                if (labelError.status === 404) {
+                  console.log('Creating IN PROGRESS label...');
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: 'IN PROGRESS',
+                    color: '0366d6',
+                    description: '작업 진행 중'
+                  });
+                }
+              }
+              
+              // 3. 이슈 열기 (닫혀있을 경우)
               if (issue.data.state === 'closed') {
-                console.log('Issue is closed, reopening it...');
+                console.log('Issue is closed, reopening...');
                 await github.rest.issues.update({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
@@ -422,27 +386,20 @@ jobs:
                 });
               }
               
-              // 3. 기존 상태 라벨들 제거
-              const statusLabels = ['DONE', 'TODO', 'BACKLOG', 'IN REVIEW', 'READY FOR REVIEW'];
-              
-              for (const label of statusLabels) {
-                try {
-                  await github.rest.issues.removeLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: issueNumber,
-                    name: label
-                  });
-                  console.log(`Removed label: ${label}`);
-                } catch (e) {
-                  // 라벨이 없으면 무시
-                  if (e.status !== 404) {
-                    console.log(`Label '${label}' not found or already removed`);
-                  }
-                }
+              // 4. DONE 라벨 제거 (존재하면)
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  name: 'DONE'
+                });
+                console.log('Removed DONE label');
+              } catch (e) {
+                console.log('DONE label not found or already removed');
               }
               
-              // 4. IN PROGRESS 추가
+              // 5. IN PROGRESS 라벨 추가
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -452,26 +409,41 @@ jobs:
               
               console.log('Added IN PROGRESS label');
               
-              // 5. 이슈에 코멘트 추가
+              // 6. 코멘트 추가
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issueNumber,
-                body: `🔄 **이슈 재개됨**\n연결된 PR #${prNumber}이(가) 재열렸습니다. 이슈를 IN PROGRESS 상태로 변경합니다.\n\nPR 링크: ${prUrl}`
+                body: `🔄 **이슈 재개됨**\n연결된 PR #${prNumber}이(가) 재열렸습니다. 이슈를 IN PROGRESS 상태로 변경합니다.\n\nPR: https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`
               });
               
               console.log(`✅ Successfully updated issue #${issueNumber} to IN PROGRESS`);
               
-            } catch (error) {
-              console.error(`❌ Error updating issue #${issueNumber}:`, error);
+              return {
+                success: true,
+                issueNumber: issueNumber,
+                prNumber: prNumber
+              };
               
-              // 에러 발생시 PR에 코멘트 추가
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                body: `⚠️ **자동 이슈 상태 업데이트 실패**\n연결된 이슈 #${issueNumber}를 IN PROGRESS 상태로 변경하는데 실패했습니다. 수동으로 처리해주세요.\n\n에러: ${error.message}`
-              });
+            } catch (error) {
+              console.error(`❌ Failed to update issue #${issueNumber}:`, error.message);
+              
+              // 실패 시 PR에 코멘트 추가
+              try {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  body: `⚠️ **자동 이슈 상태 업데이트 실패**\n연결된 이슈 #${issueNumber}를 IN PROGRESS 상태로 변경하는데 실패했습니다. 수동으로 처리해주세요.\n\n에러: ${error.message}`
+                });
+              } catch (commentError) {
+                console.error('Failed to add error comment:', commentError.message);
+              }
+              
+              return {
+                success: false,
+                error: error.message
+              };
             }
             
       # - name: Comment on issue
