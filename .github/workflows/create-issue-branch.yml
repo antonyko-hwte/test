@@ -41,8 +41,7 @@ jobs:
         run: |
           ISSUE_NUMBER=${{ github.event.issue.number }}
           
-          # GitHub Actions 컨텍스트에서 레이블 이름 배열 가져오기
-          # labels 배열에서 이름만 추출
+          # labels 이름 추출
           LABEL_NAMES=""
           PREFIX=""
           
@@ -50,13 +49,12 @@ jobs:
           echo "DEBUG: All labels JSON:"
           echo '${{ toJSON(github.event.issue.labels) }}'
           
-          # jq를 사용하여 레이블 이름만 추출 (jq가 설치되어 있다고 가정)
-          # GitHub Actions Ubuntu runner에는 jq가 기본 설치되어 있습니다
+          # 레이블 이름만 추출
           LABEL_NAMES=$(echo '${{ toJSON(github.event.issue.labels) }}' | jq -r '.[].name' 2>/dev/null || echo "")
           
           echo "DEBUG: Extracted label names: $LABEL_NAMES"
           
-          # 각 레이블을 개별적으로 확인
+          # 각 레이블 확인
           while IFS= read -r label; do
             if [ -n "$label" ]; then
               echo "DEBUG: Checking label: '$label'"
@@ -99,7 +97,7 @@ jobs:
             fi
           done <<< "$LABEL_NAMES"
           
-          # 전체 브랜치 이름 생성
+          # 브랜치 이름 생성
           BRANCH_NAME="${PREFIX}chistock-#${ISSUE_NUMBER}"
           
           echo "DEBUG: Final prefix: '$PREFIX'"
@@ -186,7 +184,6 @@ jobs:
                 assignees: assignees
               });
             }
-            
             return pr.data.number;
 
   # PR이 닫힐 때 이슈 상태 업데이트
@@ -194,8 +191,8 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') &&
-      github.event.action == 'closed' &&
-      github.event.pull_request.merged == true
+      github.event.action == 'closed'
+      # github.event.pull_request.merged == true
     permissions:
       issues: write
       pull-requests: read
@@ -269,7 +266,6 @@ jobs:
   # PR이 재열렸을 때 이슈 상태 업데이트
   update_issue_on_pr_reopen:
     runs-on: ubuntu-latest
-    # 주의: github.event.pull_request.merged == true 조건을 제거했습니다
     if: |
       (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') &&
       github.event.action == 'reopened'
