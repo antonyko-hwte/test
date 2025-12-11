@@ -2,7 +2,7 @@ branchName: "chistock-#${issue.number}"
 autoCloseIssue: true
 openDraftPR: true
 copyIssueLabelsToPR: true
-copyIssueAssigneeToPR: true
+# copyIssueAssigneeToPR: true
 copyIssueBodyToPR: true
 draftPRTitle: "chistock-#${issue.number}: ${issue.title}"
 
