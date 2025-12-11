@@ -1,28 +1,28 @@
 # branchName: "${branch.prefix}chistock-#${issue.number}"
-autoCloseIssue: true
-openDraftPR: true
-copyIssueLabelsToPR: true
-copyIssueAssigneeToPR: true
-copyIssueBodyToPR: true
-draftPRTitle: "chistock-#${issue.number}: ${issue.title}"
+# autoCloseIssue: true
+# openDraftPR: true
+# copyIssueLabelsToPR: true
+# copyIssueAssigneeToPR: true
+# copyIssueBodyToPR: true
+# draftPRTitle: "chistock-#${issue.number}: ${issue.title}"
 
-branches:
-  - label: bug
-    prefix: bugfix/
-  - label: release
-    skip: true
-  - label: env
-    skip: true
-  - label: feature
-    prefix: feature/
-  - label: duplicate
-    skip: true
-  - label: refactor
-    prefix: refactor/
-  - label: test
-    prefix: test/
-  - label: docs
-    skip: true
-  - label: question
-    skip: true
-commentMessage: 'Branch ${branchName} created for issue: ${issue.title}'
+# branches:
+#   - label: bug
+#     prefix: bugfix/
+#   - label: release
+#     skip: true
+#   - label: env
+#     skip: true
+#   - label: feature
+#     prefix: feature/
+#   - label: duplicate
+#     skip: true
+#   - label: refactor
+#     prefix: refactor/
+#   - label: test
+#     prefix: test/
+#   - label: docs
+#     skip: true
+#   - label: question
+#     skip: true
+# commentMessage: 'Branch ${branchName} created for issue: ${issue.title}'
