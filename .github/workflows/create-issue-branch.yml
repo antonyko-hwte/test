@@ -39,86 +39,84 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create Issue Branch
+      - name: Determine branch type from labels
+        id: get_branch_type
+        run: |
+          BRANCH_TYPE="issuefix"
+          
+          # 이슈의 라벨 확인
+          LABELS='${{ toJSON(github.event.issue.labels) }}'
+          
+          if echo "$LABELS" | grep -q '"name":"bug"'; then
+            BRANCH_TYPE="bugfix"
+          elif echo "$LABELS" | grep -q '"name":"feature"'; then
+            BRANCH_TYPE="feature"
+          elif echo "$LABELS" | grep -q '"name":"refactor"'; then
+            BRANCH_TYPE="refactor"
+          elif echo "$LABELS" | grep -q '"name":"test"'; then
+            BRANCH_TYPE="test"
+          fi
+          
+          echo "branch_type=$BRANCH_TYPE" >> $GITHUB_OUTPUT
+          echo "Determined branch type: $BRANCH_TYPE"
+
+      - name: Create Issue Branch and PR
         uses: robvanderleek/create-issue-branch@main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          config: |
-            branches:
-              - label: bug
-                name: "bugfix/chistock-#${{ github.event.issue.number }}"
-              - label: feature
-                name: "feature/chistock-#${{ github.event.issue.number }}"
-              - label: refactor
-                name: "refactor/chistock-#${{ github.event.issue.number }}"
-              - label: test
-                name: "test/chistock-#${{ github.event.issue.number }}"
-              - label: issue
-                name: "issuefix/chistock-#${{ github.event.issue.number }}"
-              - label: docs
-                skip: true
-              - label: release
-                skip: true
-              - label: duplicate
-                skip: true
-              - label: invalid
-                skip: true
-              - label: wontfix
-                skip: true
-              - label: env
-                skip: true
-              - label: question
-                skip: true
-
-            # 기능 설정
-            autoLinkIssue: true
-            autoCloseIssue: false
-            openDraftPR: true
-            copyIssueLabelsToPR: true
-            copyIssueAssigneeToPR: true
-            copyIssueBodyToPR: false  # 기본 템플릿 사용
-            copyIssueProjectsToPR: true
-            copyIssueMilestoneToPR: true
-            # PR 설정 개선
-            draftPRTitle: "[chistock-#${{ github.event.issue.number }}] ${{ github.event.issue.title }}"
-            draftPRBody: |
-              ## 관련 이슈
-              Resolves #${{ github.event.issue.number }}
-              ## 변경 사항
-              이슈 #${{ github.event.issue.number }}를 해결하기 위한 PR입니다.
-              ## 작업 내용
-              - [ ] 작업 내용을 입력해주세요
-              
-              ## 테스트
-              - [ ] 테스트를 완료했습니다
-            # 기본 브랜치 설정
-            defaultBranch: "main"
-            # 기타 설정
-            silent: false
-            skipBranchForExistingPR: true
-            commentOnIssue: true
-            # 브랜치 이름 포맷 설정 추가
-            branchNameFormat: "lowercase"
-            replaceInvalidCharacters: true
+          # 브랜치 이름 설정
+          CREATE_ISSUE_BRANCH_NAME_TEMPLATE: "${{ steps.get_branch_type.outputs.branch_type }}/chistock-#${NUMBER}"
+          # PR 제목 설정
+          CREATE_ISSUE_BRANCH_TITLE_TEMPLATE: "[chistock-#${NUMBER}] ${TITLE}"
+          # PR 본문 설정
+          CREATE_ISSUE_BRANCH_BODY_TEMPLATE: |
+            ## 관련 이슈
+            Resolves #${NUMBER}
+            
+            ## 변경 사항
+            이슈 #${NUMBER}를 해결하기 위한 PR입니다.
+            
+            ## 작업 내용
+            - [ ] 작업 내용을 입력해주세요
+            
+            ## 테스트
+            - [ ] 테스트를 완료했습니다
+            
+          # 기능 설정
+          CREATE_ISSUE_BRANCH_AUTO_LINK_ISSUE: "true"
+          CREATE_ISSUE_BRANCH_AUTO_CLOSE_ISSUE: "false"
+          CREATE_ISSUE_BRANCH_OPEN_DRAFT_PR: "true"
+          CREATE_ISSUE_BRANCH_COPY_ISSUE_LABELS_TO_PR: "true"
+          CREATE_ISSUE_BRANCH_COPY_ISSUE_ASSIGNEE_TO_PR: "true"
+          CREATE_ISSUE_BRANCH_COPY_ISSUE_PROJECTS_TO_PR: "true"
+          CREATE_ISSUE_BRANCH_COPY_ISSUE_MILESTONE_TO_PR: "true"
           
-      # 추가 단계: 생성 완료 후 알림
+          # 기본 브랜치 및 기타 설정
+          CREATE_ISSUE_BRANCH_DEFAULT_BRANCH: "main"
+          CREATE_ISSUE_BRANCH_SILENT: "false"
+          CREATE_ISSUE_BRANCH_SKIP_BRANCH_FOR_EXISTING_PR: "true"
+          CREATE_ISSUE_BRANCH_COMMENT_ON_ISSUE: "true"
+          CREATE_ISSUE_BRANCH_BRANCH_NAME_FORMAT: "lowercase"
+          CREATE_ISSUE_BRANCH_REPLACE_INVALID_CHARACTERS: "true"
+          
+          # 특정 라벨 건너뛰기
+          CREATE_ISSUE_BRANCH_SKIP_LABELS: "docs,release,sub_issue,duplicate,invalid,question,wontfix,env"
+
       - name: Notify on success
         if: success()
         uses: actions/github-script@v6
         with:
           script: |
             const issue = context.payload.issue;
-            const branch = process.env.CREATED_BRANCH_NAME;
+            const branchType = '${{ steps.get_branch_type.outputs.branch_type }}';
+            const branchName = `${branchType}/chistock-#${issue.number}`.toLowerCase();
             
-            if (branch) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                body: `브랜치 및 PR이 생성되었습니다!\n\n**브랜치**: \`${branch}\`\n**이슈**: #${issue.number}\n\n작업을 시작해주세요!`
-              });
-            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: `✅ 브랜치 및 PR이 생성되었습니다!\n\n**브랜치**: \`${branchName}\`\n**이슈**: #${issue.number}\n\n작업을 시작해주세요!\n\n생성된 PR에서 작업을 진행해주시기 바랍니다.`
+            });
 
   # PR 머지 때 이슈 자동 닫기
   close_issue_on_pr_merge:
@@ -132,30 +130,60 @@ jobs:
       issues: write
     
     steps:
+      - name: Extract issue number from PR
+        id: extract-issue
+        run: |
+          PR_BODY="${{ github.event.pull_request.body }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          
+          # PR 본문에서 이슈 번호 추출
+          ISSUE_FROM_BODY=$(echo "$PR_BODY" | grep -oE "(Resolves|Closes|Fixes|Fix)\s+#[0-9]+" | head -1 | grep -oE "[0-9]+" || echo "")
+          
+          # PR 제목에서 이슈 번호 추출 (형식: [chistock-#123])
+          ISSUE_FROM_TITLE=$(echo "$PR_TITLE" | grep -oE "\[chistock-#([0-9]+)\]" | head -1 | grep -oE "[0-9]+" || echo "")
+          
+          # 우선순위: 본문 > 제목
+          if [ -n "$ISSUE_FROM_BODY" ]; then
+            ISSUE_NUMBER="$ISSUE_FROM_BODY"
+          elif [ -n "$ISSUE_FROM_TITLE" ]; then
+            ISSUE_NUMBER="$ISSUE_FROM_TITLE"
+          else
+            ISSUE_NUMBER=""
+          fi
+          
+          if [ -n "$ISSUE_NUMBER" ]; then
+            echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+            echo "Found issue number: $ISSUE_NUMBER"
+          else
+            echo "No issue number found in PR"
+          fi
+      
       - name: Close related issue
+        if: steps.extract-issue.outputs.issue_number != ''
         uses: actions/github-script@v6
         with:
           script: |
-            const pr = context.payload.pull_request;
-            const body = pr.body || '';
+            const issueNumber = parseInt('${{ steps.extract-issue.outputs.issue_number }}');
+            const prNumber = context.payload.pull_request.number;
             
-            // PR 본문에서 이슈 번호 추출 (Resolves #123, Closes #123, Fixes #123 등)
-            const issueMatch = body.match(/(?:Resolves|Closes|Fixes|Fix)\s+#(\d+)/i);
-            
-            if (issueMatch) {
-              const issueNumber = parseInt(issueMatch[1]);
-              
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                state: 'closed'
-              });
-              
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                body: `PR #${pr.number}이(가) 머지되어 이슈를 닫습니다.`
-              });
+            if (issueNumber && !isNaN(issueNumber)) {
+              try {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  state: 'closed'
+                });
+                
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  body: `✅ PR #${prNumber}이(가) 머지되어 이슈를 닫습니다.`
+                });
+                
+                console.log(`Successfully closed issue #${issueNumber}`);
+              } catch (error) {
+                console.error(`Error closing issue #${issueNumber}:`, error);
+              }
             }
