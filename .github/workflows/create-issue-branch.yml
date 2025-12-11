@@ -15,161 +15,146 @@ permissions:
   issues: write
   checks: write
 
-jobs:
-  create_issue_branch_job:
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'issues' && (
-        github.event.action == 'opened' ||
-        github.event.action == 'assigned' ||
-        github.event.action == 'labeled'
-      ) &&
-      !contains(github.event.issue.labels.*.name, 'docs') &&
-      !contains(github.event.issue.labels.*.name, 'release') &&
-      !contains(github.event.issue.labels.*.name, 'sub_issue') &&
-      !contains(github.event.issue.labels.*.name, 'duplicate') &&
-      !contains(github.event.issue.labels.*.name, 'invalid') &&
-      !contains(github.event.issue.labels.*.name, 'question') &&
-      !contains(github.event.issue.labels.*.name, 'wontfix') &&
-      !contains(github.event.issue.labels.*.name, 'env')
+env:
+  ISSUE_NUMBER: ${{ github.event.issue.number }}
+  ISSUE_TITLE: ${{ github.event.issue.title }}
 
+jobs:
+  create_prefixed_branch:
+    runs-on: ubuntu-latest
+    
     steps:
-      - name: Determine prefix from labels
-        id: get_prefix
+      # Step 1: 레이블 정보를 텍스트 파일로 저장
+      - name: Extract and save label information
+        id: extract_labels
         run: |
-          ISSUE_NUMBER=${{ github.event.issue.number }}
-          LABELS='${{ toJSON(github.event.issue.labels) }}'
+          # 레이블 정보를 JSON 파일로 저장
+          echo '${{ toJSON(github.event.issue.labels) }}' > labels.json
           
-          echo "DEBUG: Raw labels = $LABELS"
+          # 레이블 이름만 추출
+          echo '${{ join(github.event.issue.labels.*.name, " ") }}' > label_names.txt
           
-          # 레이블 이름을 소문자로 확인
-          PREFIX=""
+          # 디버그 출력
+          echo "=== LABEL DEBUG INFO ==="
+          echo "Raw JSON:"
+          cat labels.json
+          echo -e "\nLabel names:"
+          cat label_names.txt
           
-          # 레이블별 prefix 매핑
-          if echo "$LABELS" | grep -i '"name":"bug"'; then
-            PREFIX="bugfix/"
-            echo "DEBUG: Found 'bug' label"
-          elif echo "$LABELS" | grep -i '"name":"feature"'; then
-            PREFIX="feature/"
-            echo "DEBUG: Found 'feature' label"
-          elif echo "$LABELS" | grep -i '"name":"hotfix"'; then
-            PREFIX="hotfix/"
-            echo "DEBUG: Found 'hotfix' label"
-          elif echo "$LABELS" | grep -i '"name":"refactor"'; then
-            PREFIX="refactor/"
-            echo "DEBUG: Found 'refactor' label"
+          # 레이블 존재 여부 체크
+          if [ -s label_names.txt ] && [ "$(cat label_names.txt)" != "" ]; then
+            echo "HAS_LABELS=true" >> $GITHUB_OUTPUT
           else
-            PREFIX=""
-            echo "DEBUG: No specific label found, using no prefix"
+            echo "HAS_LABELS=false" >> $GITHUB_OUTPUT
           fi
+      
+      # Step 2: Python으로 정확한 레이블 파싱
+      - name: Determine prefix using Python
+        id: determine_prefix
+        run: |
+          cat << 'EOF' > parse_labels.py
+          import json
+          import sys
           
-          # 전체 브랜치 이름 생성
-          BRANCH_NAME="${PREFIX}chistock-#${ISSUE_NUMBER}"
+          # labels.json 파일 읽기
+          with open('labels.json', 'r') as f:
+              labels_data = f.read()
           
+          try:
+              labels = json.loads(labels_data)
+              print(f"DEBUG: Number of labels: {len(labels)}")
+              
+              # 각 레이블 확인
+              for label in labels:
+                  name = label['name'].lower()
+                  print(f"DEBUG: Found label: '{name}'")
+                  
+                  if name == 'bug':
+                      print('bugfix/')
+                      sys.exit(0)
+                  elif name == 'feature':
+                      print('feature/')
+                      sys.exit(0)
+                  elif name == 'hotfix':
+                      print('hotfix/')
+                      sys.exit(0)
+                  elif name == 'refactor':
+                      print('refactor/')
+                      sys.exit(0)
+                  elif name == 'enhancement':
+                      print('enhancement/')
+                      sys.exit(0)
+              
+              # 매칭되는 레이블이 없으면 빈 문자열
+              print('')
+              
+          except Exception as e:
+              print(f"ERROR parsing labels: {e}")
+              print('')
+          EOF
+          
+          # Python 스크립트 실행
+          PREFIX=$(python3 parse_labels.py)
+          echo "DEBUG: Determined prefix: '${PREFIX}'"
+          
+          # GITHUB_OUTPUT에 저장
           echo "prefix=${PREFIX}" >> $GITHUB_OUTPUT
+          
+          # 브랜치 이름 생성
+          BRANCH_NAME="${PREFIX}chistock-#${{ env.ISSUE_NUMBER }}"
           echo "branch_name=${BRANCH_NAME}" >> $GITHUB_OUTPUT
-          echo "issue_number=${ISSUE_NUMBER}" >> $GITHUB_OUTPUT
       
-      - name: Debug output
+      # Step 3: 생성될 브랜치 정보 출력
+      - name: Display branch info
         run: |
-          echo "Determined prefix: ${{ steps.get_prefix.outputs.prefix }}"
-          echo "Branch name will be: ${{ steps.get_prefix.outputs.branch_name }}"
+          echo "=== BRANCH CREATION INFO ==="
+          echo "Issue Number: ${{ env.ISSUE_NUMBER }}"
+          echo "Issue Title: ${{ env.ISSUE_TITLE }}"
+          echo "Prefix: '${{ steps.determine_prefix.outputs.prefix }}'"
+          echo "Branch Name: '${{ steps.determine_prefix.outputs.branch_name }}'"
+          echo "============================"
       
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Create and push branch
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          
-          BRANCH_NAME="${{ steps.get_prefix.outputs.branch_name }}"
-          
-          echo "Creating branch: ${BRANCH_NAME}"
-          
-          # 브랜치 생성 및 푸시
-          git checkout -b "${BRANCH_NAME}"
-          
-          # 빈 커밋 생성 (필요시)
-          git commit --allow-empty -m "chore: Initialize branch for chistock-#${{ steps.get_prefix.outputs.issue_number }}"
-          
-          git push -u origin "${BRANCH_NAME}"
-      
-      - name: Create Pull Request
-        id: create_pr
+      # Step 4: GitHub API로 직접 브랜치 생성 (create-issue-branch 액션 사용 안함)
+      - name: Create branch via GitHub API
+        id: create_branch
         uses: actions/github-script@v6
         with:
           script: |
-            const issue = context.payload.issue;
-            const branchName = '${{ steps.get_prefix.outputs.branch_name }}';
-            const prefix = '${{ steps.get_prefix.outputs.prefix }}'.replace('/', '');
+            const issueNumber = ${{ env.ISSUE_NUMBER }};
+            const branchName = '${{ steps.determine_prefix.outputs.branch_name }}';
+            const prefix = '${{ steps.determine_prefix.outputs.prefix }}';
             
-            // PR 제목에 prefix 표시
-            let prTitle = `chistock-#${issue.number}: ${issue.title}`;
-            if (prefix) {
-              prTitle = `[${prefix.toUpperCase()}] ${prTitle}`;
-            }
+            console.log(`Creating branch: ${branchName}`);
+            console.log(`With prefix: ${prefix}`);
             
-            // PR 생성
-            const pr = await github.rest.pulls.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: prTitle,
-              head: branchName,
-              base: 'main',
-              body: `## 📌 관련 이슈\nResolves #${issue.number}\n\n## 📝 설명\n${issue.body || '이슈 해결을 위한 변경사항입니다.'}\n\n---\n*자동 생성된 PR입니다.*\n*브랜치: \`${branchName}\`*`,
-              draft: true
-            });
-            
-            // 라벨 복사
-            if (issue.labels && issue.labels.length > 0) {
-              const labels = issue.labels.map(label => label.name);
-              await github.rest.issues.addLabels({
+            try {
+              // 1. 기본 브랜치의 최신 커밋 SHA 가져오기
+              const baseRef = await github.rest.git.getRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: pr.data.number,
-                labels: labels
+                ref: 'heads/main'  // 또는 'master', 'develop' 등
               });
-            }
-            
-            // Assignee 복사
-            if (issue.assignees && issue.assignees.length > 0) {
-              const assignees = issue.assignees.map(assignee => assignee.login);
-              await github.rest.issues.addAssignees({
+              
+              const baseSha = baseRef.data.object.sha;
+              console.log(`Base SHA: ${baseSha}`);
+              
+              // 2. 새 브랜치 생성
+              await github.rest.git.createRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: pr.data.number,
-                assignees: assignees
+                ref: `refs/heads/${branchName}`,
+                sha: baseSha
               });
+              
+              console.log(`✅ Branch created successfully: ${branchName}`);
+              
+              return {
+                success: true,
+                branchName: branchName,
+                prefix: prefix
+              };
+              
+            } catch (error) {
+              console.error('❌ Failed to create branch:', error);
+              throw error;
             }
-            
-            return pr.data.number;
-      
-      - name: Comment on issue
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const issue = context.payload.issue;
-            const branchName = '${{ steps.get_prefix.outputs.branch_name }}';
-            const prNumber = ${{ steps.create_pr.outputs.result }};
-            
-            let prefixText = '';
-            const prefix = '${{ steps.get_prefix.outputs.prefix }}';
-            if (prefix) {
-              prefixText = `**카테고리**: ${prefix.replace('/', '')}\n`;
-            }
-            
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issue.number,
-              body: `🎉 **브랜치 및 PR이 생성되었습니다!**\n\n` +
-                    `${prefixText}` +
-                    `**이슈**: #${issue.number}\n` +
-                    `**브랜치**: \`${branchName}\`\n` +
-                    `**PR**: #${prNumber}\n\n` +
-                    `해당 브랜치에서 작업을 시작해주세요.`
-            });
