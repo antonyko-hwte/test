@@ -186,12 +186,12 @@ jobs:
             }
             return pr.data.number;
 
-  # PR이 닫힐 때 이슈 상태 업데이트
+  # PR이 닫힐 때 이슈 상태 업데이트  github.event.pull_request.merged == true
   update_issue_on_pr_close:
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') &&
-      github.event.action == 'closed' # && github.event.pull_request.merged == true
+      github.event.action == 'closed'
 
     permissions:
       issues: write
