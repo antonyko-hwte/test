@@ -34,38 +34,69 @@ jobs:
       !contains(github.event.issue.labels.*.name, 'env')
 
     steps:
-      - name: Create prefixed branch
-        id: create_branch
-        uses: robvanderleek/create-issue-branch@main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Determine prefix from labels
+        id: get_prefix
+        run: |
+          ISSUE_NUMBER=${{ github.event.issue.number }}
+          LABELS='${{ toJSON(github.event.issue.labels) }}'
+          
+          echo "DEBUG: Raw labels = $LABELS"
+          
+          # 레이블 이름을 소문자로 확인
+          PREFIX=""
+          
+          # 레이블별 prefix 매핑
+          if echo "$LABELS" | grep -i '"name":"bug"'; then
+            PREFIX="bugfix/"
+            echo "DEBUG: Found 'bug' label"
+          elif echo "$LABELS" | grep -i '"name":"feature"'; then
+            PREFIX="feature/"
+            echo "DEBUG: Found 'feature' label"
+          elif echo "$LABELS" | grep -i '"name":"hotfix"'; then
+            PREFIX="hotfix/"
+            echo "DEBUG: Found 'hotfix' label"
+          elif echo "$LABELS" | grep -i '"name":"refactor"'; then
+            PREFIX="refactor/"
+            echo "DEBUG: Found 'refactor' label"
+          else
+            PREFIX=""
+            echo "DEBUG: No specific label found, using no prefix"
+          fi
+          
+          # 전체 브랜치 이름 생성
+          BRANCH_NAME="${PREFIX}chistock-#${ISSUE_NUMBER}"
+          
+          echo "prefix=${PREFIX}" >> $GITHUB_OUTPUT
+          echo "branch_name=${BRANCH_NAME}" >> $GITHUB_OUTPUT
+          echo "issue_number=${ISSUE_NUMBER}" >> $GITHUB_OUTPUT
+      
+      - name: Debug output
+        run: |
+          echo "Determined prefix: ${{ steps.get_prefix.outputs.prefix }}"
+          echo "Branch name will be: ${{ steps.get_prefix.outputs.branch_name }}"
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          # branches 매개변수로 레이블-prefix 매핑
-          branches: |
-            [
-              {"label": "bug", "prefix": "bugfix/"},
-              {"label": "feature", "prefix": "feature/"},
-              {"label": "hotfix", "prefix": "hotfix/"},
-              {"label": "refactor", "prefix": "refactor/"},
-              {"label": "*", "prefix": ""}
-            ]
-          
-          # 브랜치 이름 템플릿
-          branchName: "${branch.prefix}chistock-#${{ github.event.issue.number }}"
-          
-          openDraftPR: true
-          copyIssueLabelsToPR: true
-          copyIssueAssigneeToPR: true
-          draftPRTitle: "[${branch.prefix.replace('/', '')}] chistock-#${{ github.event.issue.number }}: ${{ github.event.issue.title }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Create and push branch
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           
+          BRANCH_NAME="${{ steps.get_prefix.outputs.branch_name }}"
+          
+          echo "Creating branch: ${BRANCH_NAME}"
+          
           # 브랜치 생성 및 푸시
-          git checkout -b "${{ steps.branch.outputs.name }}"
-          git push -u origin "${{ steps.branch.outputs.name }}"
+          git checkout -b "${BRANCH_NAME}"
+          
+          # 빈 커밋 생성 (필요시)
+          git commit --allow-empty -m "chore: Initialize branch for chistock-#${{ steps.get_prefix.outputs.issue_number }}"
+          
+          git push -u origin "${BRANCH_NAME}"
       
       - name: Create Pull Request
         id: create_pr
@@ -73,16 +104,23 @@ jobs:
         with:
           script: |
             const issue = context.payload.issue;
-            const branchName = '${{ steps.branch.outputs.name }}';
+            const branchName = '${{ steps.get_prefix.outputs.branch_name }}';
+            const prefix = '${{ steps.get_prefix.outputs.prefix }}'.replace('/', '');
+            
+            // PR 제목에 prefix 표시
+            let prTitle = `chistock-#${issue.number}: ${issue.title}`;
+            if (prefix) {
+              prTitle = `[${prefix.toUpperCase()}] ${prTitle}`;
+            }
             
             // PR 생성
             const pr = await github.rest.pulls.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `chistock-#${issue.number}: ${issue.title}`,
+              title: prTitle,
               head: branchName,
               base: 'main',
-              body: `## 📌 관련 이슈\nResolves #${issue.number}\n\n## 📝 설명\n${issue.body || '이슈 해결을 위한 변경사항입니다.'}\n\n---\n*자동 생성된 PR입니다.*`,
+              body: `## 📌 관련 이슈\nResolves #${issue.number}\n\n## 📝 설명\n${issue.body || '이슈 해결을 위한 변경사항입니다.'}\n\n---\n*자동 생성된 PR입니다.*\n*브랜치: \`${branchName}\`*`,
               draft: true
             });
             
@@ -110,20 +148,27 @@ jobs:
             
             return pr.data.number;
       
-      - name: Update issue with branch info
+      - name: Comment on issue
         uses: actions/github-script@v6
         with:
           script: |
             const issue = context.payload.issue;
-            const branchName = '${{ steps.branch.outputs.name }}';
-            const prNumber = '${{ steps.create_pr.outputs.result }}';
+            const branchName = '${{ steps.get_prefix.outputs.branch_name }}';
+            const prNumber = ${{ steps.create_pr.outputs.result }};
             
-            // 이슈에 코멘트 추가
+            let prefixText = '';
+            const prefix = '${{ steps.get_prefix.outputs.prefix }}';
+            if (prefix) {
+              prefixText = `**카테고리**: ${prefix.replace('/', '')}\n`;
+            }
+            
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issue.number,
               body: `🎉 **브랜치 및 PR이 생성되었습니다!**\n\n` +
+                    `${prefixText}` +
+                    `**이슈**: #${issue.number}\n` +
                     `**브랜치**: \`${branchName}\`\n` +
                     `**PR**: #${prNumber}\n\n` +
                     `해당 브랜치에서 작업을 시작해주세요.`
