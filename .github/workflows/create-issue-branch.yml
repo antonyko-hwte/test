@@ -34,37 +34,29 @@ jobs:
       !contains(github.event.issue.labels.*.name, 'env')
 
     steps:
-      - name: Determine branch name
-        id: branch
-        run: |
-          ISSUE_NUMBER=${{ github.event.issue.number }}
-          
-          # 기본 브랜치 이름: chistock-#{number}
-          BASE_NAME="chistock-#${ISSUE_NUMBER}"
-          
-          # 레이블에 따라 prefix 추가
-          LABELS='${{ toJSON(github.event.issue.labels) }}'
-          
-          if echo "${LABELS}" | grep -q '"name":"bug"'; then
-            BRANCH_NAME="bugfix/${BASE_NAME}"
-          elif echo "${LABELS}" | grep -q '"name":"feature"'; then
-            BRANCH_NAME="feature/${BASE_NAME}"
-          elif echo "${LABELS}" | grep -q '"name":"hotfix"'; then
-            BRANCH_NAME="hotfix/${BASE_NAME}"
-          elif echo "${LABELS}" | grep -q '"name":"refactor"'; then
-            BRANCH_NAME="refactor/${BASE_NAME}"
-          else
-            BRANCH_NAME="${BASE_NAME}"
-          fi
-          
-          echo "name=${BRANCH_NAME}" >> $GITHUB_OUTPUT
-          echo "base=${BASE_NAME}" >> $GITHUB_OUTPUT
-      
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Create prefixed branch
+        id: create_branch
+        uses: robvanderleek/create-issue-branch@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # branches 매개변수로 레이블-prefix 매핑
+          branches: |
+            [
+              {"label": "bug", "prefix": "bugfix/"},
+              {"label": "feature", "prefix": "feature/"},
+              {"label": "hotfix", "prefix": "hotfix/"},
+              {"label": "refactor", "prefix": "refactor/"},
+              {"label": "*", "prefix": ""}
+            ]
+          
+          # 브랜치 이름 템플릿
+          branchName: "${branch.prefix}chistock-#${{ github.event.issue.number }}"
+          
+          openDraftPR: true
+          copyIssueLabelsToPR: true
+          copyIssueAssigneeToPR: true
+          draftPRTitle: "[${branch.prefix.replace('/', '')}] chistock-#${{ github.event.issue.number }}: ${{ github.event.issue.title }}
       
       - name: Create and push branch
         run: |
