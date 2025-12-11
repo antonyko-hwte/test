@@ -191,61 +191,99 @@ jobs:
 
   # PR이 닫힐 때 이슈 상태 업데이트
   update_issue_on_pr_close:
-    runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') &&
-      github.event.action == 'closed' &&
-      github.event.pull_request.merged == true
-    permissions:
-      issues: write
-      pull-requests: read
+     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
     
     steps:
-      - name: Extract issue number from PR body
-        id: extract_issue
+      - name: Log event info
         run: |
-          PR_BODY="${{ github.event.pull_request.body }}"
-          echo "PR Body: $PR_BODY"
+          echo "🔍 PR Closed Event Triggered"
+          echo "PR Number: ${{ github.event.pull_request.number }}"
+          echo "PR Merged: ${{ github.event.pull_request.merged }}"
+          echo "PR Head Ref: ${{ github.event.pull_request.head.ref }}"
+      
+      - name: Extract issue number
+        id: extract_issue_close
+        run: |
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          echo "Branch name: $BRANCH_NAME"
           
-          # PR 본문에서 "Resolves #이슈번호" 패턴 찾기
-          if [[ "$PR_BODY" =~ Resolves\ *#([0-9]+) ]]; then
+          ISSUE_NUMBER=""
+          
+          if [[ "$BRANCH_NAME" =~ chistock-#([0-9]+) ]]; then
             ISSUE_NUMBER="${BASH_REMATCH[1]}"
-            echo "Found issue number: $ISSUE_NUMBER"
-            echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+            echo "✅ Found issue number: $ISSUE_NUMBER"
+          elif [[ "$BRANCH_NAME" =~ .*chistock-#([0-9]+) ]]; then
+            ISSUE_NUMBER="${BASH_REMATCH[1]}"
+            echo "✅ Found issue number: $ISSUE_NUMBER"
           else
-            # 브랜치 이름에서 이슈 번호 추출
-            BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
-            echo "Branch name: $BRANCH_NAME"
-            if [[ "$BRANCH_NAME" =~ chistock-#([0-9]+) ]]; then
+            PR_TITLE="${{ github.event.pull_request.title }}"
+            echo "PR Title: $PR_TITLE"
+            
+            if [[ "$PR_TITLE" =~ chistock-#([0-9]+) ]]; then
               ISSUE_NUMBER="${BASH_REMATCH[1]}"
-              echo "Found issue number from branch name: $ISSUE_NUMBER"
-              echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+              echo "✅ Found issue number from PR title: $ISSUE_NUMBER"
+            elif [[ "$PR_TITLE" =~ \#([0-9]+) ]]; then
+              ISSUE_NUMBER="${BASH_REMATCH[1]}"
+              echo "✅ Found issue number from PR title (#): $ISSUE_NUMBER"
             else
-              echo "No issue reference found"
-              echo "issue_number=" >> $GITHUB_OUTPUT
+              echo "❌ Could not extract issue number"
+              ISSUE_NUMBER=""
             fi
           fi
+          
+          if [[ -n "$ISSUE_NUMBER" ]]; then
+            echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+          else
+            echo "issue_number=" >> $GITHUB_OUTPUT
+          fi
       
-      - name: Update issue status to DONE
-        if: steps.extract_issue.outputs.issue_number != ''
+      - name: Process merged PR (DONE 상태로 변경)
+        if: steps.extract_issue_close.outputs.issue_number != '' && github.event.pull_request.merged == true
         uses: actions/github-script@v6
         with:
           script: |
-            const issueNumber = ${{ steps.extract_issue.outputs.issue_number }};
-            const prNumber = ${{ github.event.pull_request.number }};
+            const issueNumber = '${{ steps.extract_issue_close.outputs.issue_number }}';
+            const prNumber = context.payload.pull_request.number;
             
-            console.log(`Updating issue #${issueNumber} status to DONE (linked to PR #${prNumber})`);
+            console.log(`✅ PR #${prNumber} was MERGED, updating linked issue #${issueNumber} to DONE`);
             
             try {
-              // 이슈에 코멘트 추가 (PR이 merge되었음을 알림)
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                body: `✅ **이슈 해결됨**\n연결된 PR #${prNumber}이(가) merge되었습니다. 이슈를 DONE 상태로 변경합니다.`
-              });
+              // 1. DONE 라벨이 없으면 생성
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: 'DONE'
+                });
+              } catch (labelError) {
+                if (labelError.status === 404) {
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: 'DONE',
+                    color: '0e8a16',
+                    description: '완료된 이슈'
+                  });
+                }
+              }
               
-              // GitHub Projects를 사용한다면, 이슈에 "DONE" 추가
+              // 2. 상태 라벨들 제거
+              const statusLabels = ['IN PROGRESS', 'TODO', 'BACKLOG'];
+              for (const label of statusLabels) {
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issueNumber,
+                    name: label
+                  });
+                } catch (e) {
+                  // 라벨이 없으면 무시
+                }
+              }
+              
+              // 3. DONE 라벨 추가
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -253,7 +291,7 @@ jobs:
                 labels: ['DONE']
               });
               
-              // 이슈를 closed 상태로 변경
+              // 4. 이슈 닫기
               await github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -261,17 +299,105 @@ jobs:
                 state: 'closed'
               });
               
-              console.log(`Successfully updated issue #${issueNumber} to DONE`);
-              
-            } catch (error) {
-              console.error(`Error updating issue #${issueNumber}:`, error);
-              // 에러 발생시 PR에 코멘트 추가
+              // 5. 코멘트 추가
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: prNumber,
-                body: `⚠️ **자동 이슈 상태 업데이트 실패**\n이슈 #${issueNumber}를 DONE 상태로 변경하는데 실패했습니다. 수동으로 처리해주세요.\n\n에러: ${error.message}`
+                issue_number: issueNumber,
+                body: `✅ **이슈 해결됨**\n연결된 PR #${prNumber}이(가) merge되었습니다. 이슈를 DONE 상태로 변경합니다.\n\nPR: https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`
               });
+              
+              console.log(`✅ Successfully updated issue #${issueNumber} to DONE`);
+              
+            } catch (error) {
+              console.error(`❌ Failed to update issue #${issueNumber}:`, error.message);
+            }
+      
+      - name: Process closed PR without merge (TODO 상태로 변경)
+        if: steps.extract_issue_close.outputs.issue_number != '' && github.event.pull_request.merged == false
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issueNumber = '${{ steps.extract_issue_close.outputs.issue_number }}';
+            const prNumber = context.payload.pull_request.number;
+            
+            console.log(`⚠️ PR #${prNumber} was CLOSED without merge, updating linked issue #${issueNumber} to TODO`);
+            
+            try {
+              // 1. TODO 라벨이 없으면 생성
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: 'TODO'
+                });
+              } catch (labelError) {
+                if (labelError.status === 404) {
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: 'TODO',
+                    color: 'fbca04',
+                    description: '할 일'
+                  });
+                }
+              }
+              
+              // 2. 상태 라벨들 제거
+              const statusLabels = ['IN PROGRESS', 'DONE', 'BACKLOG'];
+              for (const label of statusLabels) {
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issueNumber,
+                    name: label
+                  });
+                } catch (e) {
+                  // 라벨이 없으면 무시
+                }
+              }
+              
+              // 3. TODO 라벨 추가
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                labels: ['TODO']
+              });
+              
+              // 4. 이슈 열기 (닫혀있을 경우)
+              try {
+                const issue = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber
+                });
+                
+                if (issue.data.state === 'closed') {
+                  await github.rest.issues.update({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issueNumber,
+                    state: 'open'
+                  });
+                }
+              } catch (e) {
+                console.log('Failed to check issue state:', e.message);
+              }
+              
+              // 5. 코멘트 추가
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: `⏸️ **PR이 닫혔습니다**\n연결된 PR #${prNumber}이(가) merge되지 않고 닫혔습니다. 이슈를 TODO 상태로 되돌립니다.\n\nPR: https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`
+              });
+              
+              console.log(`✅ Successfully updated issue #${issueNumber} to TODO`);
+              
+            } catch (error) {
+              console.error(`❌ Failed to update issue #${issueNumber}:`, error.message);
             }
 
   # PR이 재열렸을 때 이슈 상태 업데이트
