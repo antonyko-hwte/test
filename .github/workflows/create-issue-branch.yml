@@ -121,8 +121,8 @@ jobs:
       
       - name: Create and push branch
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          # git config --global user.name 'github-actions[bot]'
+          # git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           
           BRANCH_NAME="${{ steps.get_prefix.outputs.branch_name }}"
           
