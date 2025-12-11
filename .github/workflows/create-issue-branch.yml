@@ -28,16 +28,16 @@ jobs:
         uses: robvanderleek/create-issue-branch@main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CONFIG_BRANCH_NAME: "chistock-#${{ github.event.issue.number }}"
-          CONFIG_BRANCHES: |
-            bug=bugfix/
-            issue=issuefix/
-            feature=feature/
-            refactor=refactor/
-            test=test/
-          CONFIG_AUTO_CLOSE_ISSUE: "true"
-          CONFIG_OPEN_DRAFT_PR: "true"
-          CONFIG_COPY_ISSUE_LABELS_TO_PR: "true"
-          CONFIG_COPY_ISSUE_ASSIGNEE_TO_PR: "true"
-          CONFIG_COPY_ISSUE_BODY_TO_PR: "true"
-          CONFIG_DRAFT_PR_TITLE: "chistock-#${{ github.event.issue.number }}: ${{ github.event.issue.title }}"
+          # CONFIG_BRANCH_NAME: "chistock-#${{ github.event.issue.number }}"
+          # CONFIG_BRANCHES: |
+          #   bug=bugfix/
+          #   issue=issuefix/
+          #   feature=feature/
+          #   refactor=refactor/
+          #   test=test/
+          # CONFIG_AUTO_CLOSE_ISSUE: "true"
+          # CONFIG_OPEN_DRAFT_PR: "true"
+          # CONFIG_COPY_ISSUE_LABELS_TO_PR: "true"
+          # CONFIG_COPY_ISSUE_ASSIGNEE_TO_PR: "true"
+          # CONFIG_COPY_ISSUE_BODY_TO_PR: "true"
+          # CONFIG_DRAFT_PR_TITLE: "chistock-#${{ github.event.issue.number }}: ${{ github.event.issue.title }}"
