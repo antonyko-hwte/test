@@ -400,29 +400,3 @@ jobs:
               });
             }
             }
-            
-      # - name: Comment on issue
-      #   uses: actions/github-script@v6
-      #   with:
-      #     script: |
-      #       const issue = context.payload.issue;
-      #       const branchName = '${{ steps.get_prefix.outputs.branch_name }}';
-      #       const prNumber = ${{ steps.create_pr.outputs.result }};
-            
-      #       let prefixText = '';
-      #       const prefix = '${{ steps.get_prefix.outputs.prefix }}';
-      #       if (prefix) {
-      #         prefixText = `**카테고리**: ${prefix.replace('/', '')}\n`;
-      #       }
-            
-      #       await github.rest.issues.createComment({
-      #         owner: context.repo.owner,
-      #         repo: context.repo.repo,
-      #         issue_number: issue.number,
-      #         body: `🎉 **브랜치 및 PR이 생성되었습니다!**\n\n` +
-      #               `${prefixText}` +
-      #               `**이슈**: #${issue.number}\n` +
-      #               `**브랜치**: \`${branchName}\`\n` +
-      #               `**PR**: #${prNumber}\n\n` +
-      #               `해당 브랜치에서 작업을 시작해주세요.`
-      #       });
