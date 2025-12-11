@@ -8,6 +8,7 @@ on:
       - feature/*
       - refactor/*
       - test/*
+      - issue*
 
 jobs:
   create-pr:
