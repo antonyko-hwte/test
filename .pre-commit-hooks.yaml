@@ -3,7 +3,7 @@ repos:
     hooks:
       - id: check-owner
         name: Check Owner In Model
-        entry: ./github/hooks/commit-msg
+        entry: ./github/hooks
         language: script
         types: [file]
         files: \.yml$
