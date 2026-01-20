@@ -1,12 +1,3 @@
-name: 'Enforce Conventional Commit Template'
-
-on:
- pull_request_target:
-    types: [opened, edited, reopened, synchronize]
-    branches: ['**']  # 모든 브랜치의 PR에 적용
-  push:
-    branches: ['**']  # 모든 브랜치의 푸시에 적용
-
 name: Check Commit Message Convention
 
 on:
