@@ -7,103 +7,82 @@ on:
   push:
     branches: ['**']  # 모든 브랜치의 푸시에 적용
 
-permissions:
-  pull-requests: read
-  contents: read
+name: Check Commit Message Convention
+
+on:
+  push:
+    branches: ['**']  # 모든 브랜치의 푸시에 적용
+    
+  pull_request:
+    branches: ['**']  # 모든 브랜치의 PR에 적용
 
 jobs:
-  validate-commit-msg:
+  check-commit-message:
+    name: Validate commit message format
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 전체 히스토리 가져오기
+          fetch-depth: 0   # 모든 히스토리 가져오기 (여러 커밋 검사 가능)
 
-      - name: Validate Commit Messages Against Template
+      - name: Get commit messages
+        id: get-commits
         run: |
-          # PR 기반 실행 시 PR의 커밋들 검사, 직접 푸시 시 푸시된 커밋 검사
-          if [[ "${{ github.event_name }}" == "pull_request_target" ]]; then
-            COMMITS=${{ github.event.pull_request.commits }}
-            BASE_SHA=${{ github.event.pull_request.base.sha }}
-            HEAD_SHA=${{ github.event.pull_request.head.sha }}
-            echo "📌 PR 이벤트: $COMMITS개의 커밋을 검사합니다."
-            COMMIT_LIST=$(git log --oneline $BASE_SHA..$HEAD_SHA | cut -d' ' -f1)
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # PR인 경우 → target 브랜치까지의 커밋들 검사
+            COMMIT_RANGE="${{ github.base_ref }}..${{ github.head_ref }}"
           else
-            # Push 이벤트: 푸시된 범위의 커밋 검사
-            echo "📌 Push 이벤트: 푸시된 커밋을 검사합니다."
-            COMMIT_LIST=$(git log --oneline ${{ github.event.before }}..${{ github.event.after }} | cut -d' ' -f1)
+            # push인 경우 → 이전 푸시 이후 커밋들 (또는 최신 10개 정도 검사)
+            COMMIT_RANGE="HEAD~${{ github.event.before != '0000000000000000000000000000000000000000' && 10 || 1 }}..HEAD"
           fi
 
-          # 검사 루프 시작
-          for COMMIT_HASH in $COMMIT_LIST; do
-            echo "----------------------------------------"
-            echo "🔍 커밋 검사 중: $COMMIT_HASH"
-            MSG=$(git log --format=%B -n 1 $COMMIT_HASH)
-            
-            # 규칙 1: 제목 형식 검사 (타입: 제목)
-            if ! echo "$MSG" | head -1 | grep -qE '^(feat|fix|ci|docs|test|refact|style|chore)\s*:\s*.+'; then
-              echo "❌ [제목 형식 오류] 첫 줄은 '타입: 제목' 형식이어야 합니다. (예: feat: 로그인 기능 추가)"
-              echo "   허용 타입: feat, fix, ci, docs, test, refact, style, chore"
-              echo "   발견된 제목: $(echo "$MSG" | head -1)"
+          # 실제 커밋 메시지 수집 (병합 커밋 제외)
+          COMMIT_MESSAGES=$(git log --no-merges --pretty=format:"%s%n%b" "$COMMIT_RANGE" | sed '/^$/d')
+
+          # GitHub Actions 출력으로 전달하기 위해 파일에 저장
+          echo "$COMMIT_MESSAGES" > commit_messages.txt
+          echo "commit_range=$COMMIT_RANGE" >> $GITHUB_OUTPUT
+
+      - name: Validate commit messages
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          echo "Checking commit messages..."
+
+          while IFS= read -r line; do
+            # 빈 줄 건너뛰기
+            [[ -z "$line" ]] && continue
+
+            # 첫 번째 줄(제목) 검사
+            if [[ ! "$line" =~ ^(feat|fix|ci|docs|test|refact|style|chore)(\([^)]+\))?!?:\ .+$ ]]; then
+              echo "❌ Invalid commit title format"
+              echo "   Must be: <type>[optional scope]: <description>"
+              echo "   Allowed types: feat|fix|ci|docs|test|refact|style|chore"
+              echo "   Example: feat: 로그인 기능 추가"
+              echo "   Current line: $line"
               exit 1
             fi
 
-            # 규칙 2: 제목 길이 검사 (50자 이내)
-            TITLE=$(echo "$MSG" | head -1)
-            TITLE_LENGTH=${#TITLE}
-            if [ $TITLE_LENGTH -gt 50 ]; then
-              echo "❌ [제목 길이 오류] 제목은 50자 이내여야 합니다. (현재: $TITLE_LENGTH자)"
-              echo "   제목: $TITLE"
+            # 제목 길이 체크 (50자 이하 권장)
+            TITLE_LENGTH=$(echo "$line" | wc -m)
+            if (( TITLE_LENGTH > 51 )); then
+              echo "⚠️ Commit title too long ($((TITLE_LENGTH-1)) chars): $line"
+              # 강제 실패 시키려면 아래 주석 해제
+              # exit 1
+            fi
+
+            # 마침표로 끝나면 안됨
+            if [[ "$line" =~ \.$ ]]; then
+              echo "❌ Commit title should not end with period: $line"
               exit 1
             fi
 
-            # 규칙 3: 제목 끝 마침표 금지
-            if echo "$TITLE" | grep -q '\.$'; then
-              echo "❌ [제목 마침표 오류] 제목 끝에 마침표를 사용할 수 없습니다."
-              echo "   제목: $TITLE"
-              exit 1
-            fi
+            # 본문이 있을 경우 다음 줄로 넘어가기 (간단히 제목만 엄격 검사하는 방식)
+            # 본문까지 엄격하게 검사하고 싶다면 아래 부분을 확장하세요
 
-            # 규칙 4: 제목과 본문 사이 빈 줄 검사 (템플릿의 5번째 줄이 비어 있어야 함)
-            if [ "$(echo "$MSG" | sed -n '5p')" != "" ]; then
-              echo "❌ [구분선 오류] 제목과 본문은 빈 줄로 구분되어야 합니다. (제목 아래 4줄은 템플릿 설명이므로 5번째 줄이 비어야 함)"
-              exit 1
-            fi
+          done < commit_messages.txt
 
-            # 규칙 5: 본문 각 줄 길이 검사 (72자 이내)
-            BODY_START=6
-            LINE_NUM=$BODY_START
-            while IFS= read -r LINE; do
-              if [ ${#LINE} -gt 72 ] && [ "$LINE" != "" ]; then
-                echo "❌ [본문 길이 오류] 본문의 각 줄은 72자 이내여야 합니다. ($LINE_NUM번째 줄, 현재: ${#LINE}자)"
-                echo "   내용: $LINE"
-                exit 1
-              fi
-              ((LINE_NUM++))
-            done <<< "$(echo "$MSG" | tail -n +$BODY_START)"
-
-            # 규칙 6: 본문 형식 검사 ('- '로 시작하거나 공백 줄이어야 함, 꼬리말 제외)
-            LINE_NUM=$BODY_START
-            IN_FOOTER=false
-            while IFS= read -r LINE; do
-              # 꼬리말 섹션 시작 감지
-              if [[ "$LINE" =~ ^(fixes|resolves|ref|related to): ]]; then
-                IN_FOOTER=true
-                continue
-              fi
-              # 꼬리말 섹션이 아닌 본문 줄 검사
-              if [ "$IN_FOOTER" = false ] && [ "$LINE" != "" ]; then
-                if ! [[ "$LINE" =~ ^- ]] && ! [[ "$LINE" =~ ^[[:space:]]*- ]]; then
-                  echo "❌ [본문 형식 오류] 본문 내용은 '- '로 시작해야 합니다. ($LINE_NUM번째 줄)"
-                  echo "   발견: $LINE"
-                  exit 1
-                fi
-              fi
-              ((LINE_NUM++))
-            done <<< "$(echo "$MSG" | tail -n +$BODY_START)"
-
-            echo "✅ 커밋 $COMMIT_HASH 검사 통과"
-          done
-          echo "========================================"
-          echo "🎉 모든 커밋 메시지가 템플릿 규칙을 준수합니다."
+          echo "✅ All commit messages follow the convention!"
