@@ -1,14 +1,15 @@
 name: 'Enforce Conventional Commit Template'
 
 on:
-  pull_request_target:
+ pull_request_target:
     types: [opened, edited, reopened, synchronize]
+    branches: ['**']  # 모든 브랜치의 PR에 적용
   push:
-    branches:
-      - main
-      - master
-      - develop
-      - 'release/*'
+    branches: ['**']  # 모든 브랜치의 푸시에 적용
+
+permissions:
+  pull-requests: read
+  contents: read
 
 jobs:
   validate-commit-msg:
