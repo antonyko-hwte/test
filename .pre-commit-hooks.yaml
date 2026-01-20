@@ -1,29 +1,9 @@
-# 커밋 메시지 형식 검증 스크립트
-COMMIT_FILE=$1
-COMMIT_MSG=$(cat "$COMMIT_FILE")
-
-# 정규식 패턴: <타입>: <제목> 형식
-PATTERN="^(feat|fix|ci|docs|test|refact|style|chore): .{1,50}$"
-
-# 제목과 본문 분리 확인
-if ! echo "$COMMIT_MSG" | grep -q "^$"; then
-    echo "오류: 제목과 본문 사이에 공백 줄이 필요합니다."
-    exit 1
-fi
-
-# 형식 검증
-if ! echo "$COMMIT_MSG" | head -1 | grep -qE "$PATTERN"; then
-    echo "오류: 커밋 메시지 형식이 올바르지 않습니다."
-    echo "올바른 형식: <타입>: <제목> (50자 이내)"
-    echo "예: feat: 로그인 기능 추가"
-    echo "허용되는 타입: feat|fix|ci|docs|test|refact|style|chore"
-    exit 1
-fi
-
-# 마침표 금지 검증
-if echo "$COMMIT_MSG" | head -1 | grep -q "\.$"; then
-    echo "오류: 제목 끝에 마침표를 사용할 수 없습니다."
-    exit 1
-fi
-
-exit 0
+repos:
+  - repo: local
+    hooks:
+      - id: check-owner
+        name: Check Owner In Model
+        entry: ./hooks/commit-msg
+        language: script
+        types: [file]
+        files: \.yml$
