@@ -1,0 +1,25 @@
+[general]
+# 검사에서 제외할 규칙 (필요 시 추가)
+# ignore=title-trailing-punctuation, T3
+
+[title-max-length]
+line-length=50
+
+[title-must-not-contain-punctuation]
+# 제목 끝에 마침표(.) 금지
+
+[title-match-regex]
+# <타입> : <제목> 형식 체크 (요청하신 형식에 맞춤)
+# 허용 타입: feat, fix, ci, docs, test, refact, style, chore
+regex=^(feat|fix|ci|docs|test|refact|style|chore) : .+$
+error-msg=커밋 메시지 형식이 잘못되었습니다. '<타입> : <제목>' 형식을 지켜주세요.
+
+[body-min-line-count]
+# 본문은 선택 사항이므로 최소 줄 수는 설정하지 않거나 0으로 설정
+
+[body-is-missing]
+# 본문이 없어도 경고하지 않음 (선택 사항이므로)
+ignore-merge-commits=True
+
+[title-min-length]
+min-length=2
