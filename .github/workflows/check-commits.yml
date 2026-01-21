@@ -1,79 +1,37 @@
-name: Check Commit Message Convention
+name: GitLint Check
 
 on:
   push:
-    branches: ['**']  # 모든 브랜치의 푸시에 적용
-    
+    branches: [ main, master, develop ] # 검사할 주요 브랜치
   pull_request:
-    branches: ['**']  # 모든 브랜치의 PR에 적용
+    branches: [ main, master, develop ]
 
 jobs:
-  check-commit-message:
-    name: Validate commit message format
+  lint:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # 모든 히스토리 가져오기 (여러 커밋 검사 가능)
+          fetch-depth: 0 # 커밋 히스토리 전체를 가져와야 비교가 가능합니다.
 
-      - name: Get commit messages
-        id: get-commits
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install gitlint
+        run: pip install gitlint
+
+      - name: Run gitlint (Pull Request)
+        if: github.event_name == 'pull_request'
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            # PR인 경우 → target 브랜치까지의 커밋들 검사
-            COMMIT_RANGE="${{ github.base_ref }}..${{ github.head_ref }}"
-          else
-            # push인 경우 → 이전 푸시 이후 커밋들 (또는 최신 10개 정도 검사)
-            COMMIT_RANGE="HEAD~${{ github.event.before != '0000000000000000000000000000000000000000' && 10 || 1 }}..HEAD"
-          fi
+          # PR의 경우 base 브랜치부터 현재 HEAD까지의 모든 커밋 검사
+          gitlint --commits "origin/${{ github.base_ref }}..HEAD"
 
-          # 실제 커밋 메시지 수집 (병합 커밋 제외)
-          COMMIT_MESSAGES=$(git log --no-merges --pretty=format:"%s%n%b" "$COMMIT_RANGE" | sed '/^$/d')
-
-          # GitHub Actions 출력으로 전달하기 위해 파일에 저장
-          echo "$COMMIT_MESSAGES" > commit_messages.txt
-          echo "commit_range=$COMMIT_RANGE" >> $GITHUB_OUTPUT
-
-      - name: Validate commit messages
+      - name: Run gitlint (Push)
+        if: github.event_name == 'push'
         run: |
-          #!/usr/bin/env bash
-          set -euo pipefail
-
-          echo "Checking commit messages..."
-
-          while IFS= read -r line; do
-            # 빈 줄 건너뛰기
-            [[ -z "$line" ]] && continue
-
-            # 첫 번째 줄(제목) 검사
-            if [[ ! "$line" =~ ^(feat|fix|ci|docs|test|refact|style|chore)(\([^)]+\))?!?:\ .+$ ]]; then
-              echo "❌ Invalid commit title format"
-              echo "   Must be: <type>[optional scope]: <description>"
-              echo "   Allowed types: feat|fix|ci|docs|test|refact|style|chore"
-              echo "   Example: feat: 로그인 기능 추가"
-              echo "   Current line: $line"
-              exit 1
-            fi
-
-            # 제목 길이 체크 (50자 이하 권장)
-            TITLE_LENGTH=$(echo "$line" | wc -m)
-            if (( TITLE_LENGTH > 51 )); then
-              echo "⚠️ Commit title too long ($((TITLE_LENGTH-1)) chars): $line"
-              # 강제 실패 시키려면 아래 주석 해제
-              # exit 1
-            fi
-
-            # 마침표로 끝나면 안됨
-            if [[ "$line" =~ \.$ ]]; then
-              echo "❌ Commit title should not end with period: $line"
-              exit 1
-            fi
-
-            # 본문이 있을 경우 다음 줄로 넘어가기 (간단히 제목만 엄격 검사하는 방식)
-            # 본문까지 엄격하게 검사하고 싶다면 아래 부분을 확장하세요
-
-          done < commit_messages.txt
-
-          echo "✅ All commit messages follow the convention!"
+          # Push의 경우 새로 추가된 커밋들만 검사
+          # 첫 커밋이거나 비교 대상이 없을 경우를 대비해 예외 처리 포함
+          gitlint --commits "${{ github.event.before }}..${{ github.event.after }}" || echo "No commits to lint or new branch"
